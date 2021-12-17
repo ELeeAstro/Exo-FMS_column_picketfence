@@ -17,29 +17,22 @@ module ts_Lewis_scatter_mod
   real(dp), parameter :: twopi = 2.0_dp * pi
   real(dp), parameter :: sb = 5.670374419e-8_dp
 
-  !! Legendre quadrature for 2 nodes
-  integer, parameter :: nmu = 2
-  real(dp), dimension(nmu), parameter :: uarr = (/0.21132487_dp, 0.78867513_dp/)
-  real(dp), dimension(nmu), parameter :: w = (/0.5_dp, 0.5_dp/)
-  real(dp), dimension(nmu), parameter :: wuarr = uarr * w
-
-
   real(dp), parameter :: gam = 1.0_dp ! associated with closure for integrating over all angles
   real(dp), parameter :: gamprime = 1.0_dp
 
   public :: ts_Lewis_scatter
-  private :: lw_grey_updown, sw_grey_updown, linear_log_interp
+  private :: lw_grey_updown, sw_grey_updown, &
+  & two_stream_solver, NSBFAC, DAXPY, IAMAX, SCALE, NSBSLV
 
 contains
 
-  subroutine ts_Lewis_scatter(nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
-    & Beta_V, Beta_IR, sw_a, sw_g, lw_a, lw_g, net_F, IR_mode)
+  subroutine ts_Lewis_scatter(nlay, nlev, Tl, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, Beta_V, Beta_IR, &
+    & sw_a, sw_g, lw_a, lw_g, net_F, olr, asr)
     implicit none
 
     !! Input variables
-    integer, intent(in) :: nlay, nlev, IR_mode
-    real(dp), dimension(nlay), intent(in) :: Tl, pl
-    real(dp), dimension(nlev), intent(in) :: pe
+    integer, intent(in) :: nlay, nlev
+    real(dp), dimension(nlay), intent(in) :: Tl
     real(dp), dimension(3,nlev), intent(in) :: tau_Ve
     real(dp), dimension(2,nlev), intent(in) :: tau_IRe
     real(dp), dimension(3,nlay), intent(in) :: sw_a, sw_g
@@ -49,32 +42,25 @@ contains
     real(dp), intent(in) :: F0, mu_z, Tint, AB
 
     !! Output variables
+    real(dp), intent(out) :: olr, asr
     real(dp), dimension(nlev), intent(out) :: net_F
 
     integer :: i, b
     !! Work variables
-    real(dp) :: be_int, Finc_b, be_int_b
-    real(dp), dimension(nlev) :: Te, be, be_b
+    real(dp) :: be_int, Finc, Finc_b, be_int_b
     real(dp), dimension(nlay) :: bl, bl_b
     real(dp), dimension(3,nlev) :: sw_down_b, sw_up_b
     real(dp), dimension(2,nlev) :: lw_down_b, lw_up_b
     real(dp), dimension(nlev) :: sw_down, sw_up, lw_down, lw_up
     real(dp), dimension(nlev) :: lw_net, sw_net
 
-    !! Find temperature at layer edges through linear interpolation and extrapolation
-    do i = 2, nlay
-      call linear_log_interp(pe(i), pl(i-1), pl(i), Tl(i-1), Tl(i), Te(i))
-      !print*, i, pl(i), pl(i-1), pe(i), Tl(i-1), Tl(i), Te(i)
-    end do
-    Te(1) = Tl(1) + (pe(1) - pe(2))/(pl(1) - pe(2)) * (Tl(1) - Te(2))
-    Te(nlev) = Tl(nlay) + (pe(nlev) - pe(nlay))/(pl(nlay) - pe(nlay)) * (Tl(nlay) - Te(nlay))
-
     !! Shortwave flux calculation
     if (mu_z > 0.0_dp) then
       sw_down(:) = 0.0_dp
       sw_up(:) = 0.0_dp
+      Finc = (1.0_dp - AB) * F0
       do b = 1, 3
-        Finc_b = F0 * Beta_V(b)
+        Finc_b = Finc * Beta_V(b)
         call sw_grey_updown(nlay, nlev, Finc_b, tau_Ve(b,:), sw_a(b,:), sw_g(b,:), mu_z, sw_up_b(b,:), sw_down_b(b,:))
         sw_down(:) = sw_down(:) + sw_down_b(b,:)
         sw_up(:) = sw_up(:) + sw_up_b(b,:)
@@ -88,34 +74,26 @@ contains
     lw_up(:) = 0.0_dp
     lw_down(:) = 0.0_dp
 
-    if (IR_mode == 1) then
-      bl(:) = sb * Tl(:)**4  ! Integrated planck function flux at levels
-      be_int = sb * Tint**4 ! Integrated planck function flux for internal temperature
-      do b = 1, 2
-        bl_b(:) = bl(:) * Beta_IR(b)
-        be_int_b = be_int * Beta_IR(b)
-        call lw_grey_updown(nlay, nlev, bl_b, be_int_b, tau_IRe(b,:), lw_a(b,:), lw_g(b,:), mu_z, lw_up_b(b,:), lw_down_b(b,:))
-        lw_up(:) = lw_up(:) + lw_up_b(b,:)
-        lw_down(:) = lw_down(:) + lw_down_b(b,:)
-      end do
-    else if (IR_mode == 2) then
-      !! Longwave two-stream flux calculation
-      be(:) = (sb * Te(:)**4)/pi  ! Integrated planck function intensity at levels
-      be_int = (sb * Tint**4)/pi ! Integrated planck function intensity for internal temperature
-      do b = 1, 2
-        be_b(:) = be(:) * Beta_IR(b)
-        be_int_b = be_int * Beta_IR(b)
-        call lw_grey_updown_linear(nlay, nlev, be_b, be_int_b, tau_IRe(b,:), lw_up_b(b,:), lw_down_b(b,:))
-        lw_up(:) = lw_up(:) + lw_up_b(b,:)
-        lw_down(:) = lw_down(:) + lw_down_b(b,:)
-      end do
-    end if
-
+    bl(:) = sb * Tl(:)**4  ! Integrated planck function flux at levels
+    be_int = sb * Tint**4 ! Integrated planck function flux for internal temperature
+    do b = 1, 2
+      bl_b(:) = bl(:) * Beta_IR(b)
+      be_int_b = be_int * Beta_IR(b)
+      call lw_grey_updown(nlay, nlev, bl_b, be_int_b, tau_IRe(b,:), lw_a(b,:), lw_g(b,:), mu_z, lw_up_b(b,:), lw_down_b(b,:))
+      lw_up(:) = lw_up(:) + lw_up_b(b,:)
+      lw_down(:) = lw_down(:) + lw_down_b(b,:)
+    end do
 
     !! Net fluxes at each level
     lw_net(:) = lw_up(:) - lw_down(:)
     sw_net(:) = sw_up(:) - sw_down(:)
     net_F(:) = lw_net(:) + sw_net(:)
+
+    !! Output olr
+    olr = lw_up(1)
+
+    !! Output asr
+    asr = sw_down(1) - sw_up(1)
 
   end subroutine ts_Lewis_scatter
 
@@ -217,88 +195,6 @@ contains
     sw_down(:) = sw_down(:) + direct(:)
 
   end subroutine sw_grey_updown
-
-  subroutine lw_grey_updown_linear(nlay, nlev, be, be_int, tau_IRe, lw_up, lw_down)
-    implicit none
-
-    !! Input variables
-    integer, intent(in) :: nlay, nlev
-    real(dp), dimension(nlev), intent(in) :: be, tau_IRe
-    real(dp), intent(in) :: be_int
-
-    !! Output variables
-    real(dp), dimension(nlev), intent(out) :: lw_up, lw_down
-
-    !! Work variables and arrays
-    integer :: k, m
-    real(dp), dimension(nlay) :: dtau, edel
-    real(dp) :: del, e0i, e1i, e1i_del
-    real(dp), dimension(nlay) :: Am, Bm, Gp, Bp
-    real(dp), dimension(nlev) :: lw_up_g, lw_down_g
-
-    !! Calculate dtau in each layer
-    do k = 1, nlay
-      dtau(k) = tau_IRe(k+1) - tau_IRe(k)
-    end do
-
-    ! Zero the total flux arrays
-    lw_up(:) = 0.0_dp
-    lw_down(:) = 0.0_dp
-
-    !! Start loops to integrate in mu space
-    do m = 1, nmu
-
-      !! Prepare loop
-      do k = 1, nlay
-        ! Olson & Kunasz (1987) linear interpolant parameters
-        del = dtau(k)/uarr(m)
-        edel(k) = exp(-del)
-        e0i = 1.0_dp - edel(k)
-        e1i = del - e0i
-
-        e1i_del = e1i/del ! The equivalent to the linear in tau term
-
-        if (dtau(k) < 1.0e-6_dp) then
-          ! If we are in very low optical depth regime, then use an isothermal approximation
-          Am(k) = (0.5_dp*(be(k+1) + be(k)) * e0i)/be(k)
-          Bm(k) = 0.0_dp
-          Gp(k) = 0.0_dp
-          Bp(k) = Am(k)
-        else
-          Am(k) = e0i - e1i_del ! Am(k) = Gp(k), just indexed differently
-          Bm(k) = e1i_del ! Bm(k) = Bp(k), just indexed differently
-          Gp(k) = Am(k)
-          Bp(k) = Bm(k)
-        end if
-      end do
-
-      !! Begin two-stream loops
-      !! Perform downward loop first
-      ! Top boundary condition - 0 flux downward from top boundary
-      lw_down_g(1) = 0.0_dp
-      do k = 1, nlay
-        lw_down_g(k+1) = lw_down_g(k)*edel(k) + Am(k)*be(k) + Bm(k)*be(k+1) ! TS intensity
-      end do
-
-      !! Perform upward loop
-      ! Lower boundary condition - internal heat definition Fint = F_down - F_up
-      ! here we use the same condition but use intensity units to be consistent
-      lw_up_g(nlev) = lw_down_g(nlev) + be_int
-      do k = nlay, 1, -1
-        lw_up_g(k) = lw_up_g(k+1)*edel(k) + Bp(k)*be(k) + Gp(k)*be(k+1) ! TS intensity
-      end do
-
-      !! Sum up flux arrays with Gaussian quadrature weights and points for this mu stream
-      lw_down(:) = lw_down(:) + lw_down_g(:) * wuarr(m)
-      lw_up(:) = lw_up(:) + lw_up_g(:) * wuarr(m)
-
-    end do
-
-    !! The flux is the intensity * 2pi
-    lw_down(:) = twopi * lw_down(:)
-    lw_up(:) = twopi * lw_up(:)
-
-  end subroutine lw_grey_updown_linear
 
   subroutine two_stream_solver(nlevels, alpha_g, coszen, pi_B_surf, pi_B,  I_direct, del_tau, gammaone, &
     gammatwo, gammab, gammaplus, gammaminus, I_up, I_down)
@@ -618,24 +514,5 @@ contains
   CALL DAXPY(LM,T,A(LA,K),X(LB))
   ENDDO
   END SUBROUTINE NSBSLV
-
-  ! Perform linear interpolation in log10 space
-  subroutine linear_log_interp(xval, x1, x2, y1, y2, yval)
-    implicit none
-
-    real(dp), intent(in) :: xval, y1, y2, x1, x2
-    real(dp) :: lxval, ly1, ly2, lx1, lx2
-    real(dp), intent(out) :: yval
-    real(dp) :: norm
-
-    lxval = log10(xval)
-    lx1 = log10(x1); lx2 = log10(x2)
-    ly1 = log10(y1); ly2 = log10(y2)
-
-    norm = 1.0_dp / (lx2 - lx1)
-
-    yval = 10.0_dp**((ly1 * (lx2 - lxval) + ly2 * (lxval - lx1)) * norm)
-
-  end subroutine linear_log_interp
 
 end module ts_Lewis_scatter_mod

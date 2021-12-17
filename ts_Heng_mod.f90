@@ -1,9 +1,12 @@
 !!!
-! Elspeth KH Lee - May 2021
-! Two-stream method following Heng et al. papers
-! We follow the Malik et al. (2017) method using sub-layers to calculate midpoint fluxes
-! Pros: Easy to understand and convert from theory, no mu integration, variable diffusive factor
-! Cons: Slower than other methods (uses sub-layers and eone calculations), no scattering
+! Elspeth KH Lee - May 2021 : Initial version
+!                - Dec 2021 : adding method & Bezier interpolation
+! sw: Adding layer method with scattering
+! lw: Two-stream method following Heng et al. papers
+!     We follow the Malik et al. (2017) method using sub-layers to calculate midpoint fluxes
+!     Pros: Easy to understand and convert from theory, no mu integration, variable diffusive factor
+!     Cons: Slower than other methods (uses sub-layers and eone calculations), no scattering
+!     NOTE: Various ways to calculate the diffusion factor as function of optical depth
 !!!
 
 module ts_Heng_mod
@@ -21,14 +24,15 @@ module ts_Heng_mod
   real(dp), parameter :: eps = 1.0_dp/D  ! Diffusion factor
 
   public :: ts_Heng
-  private :: lw_grey_updown, sw_grey_down, linear_log_interp
+  private :: lw_grey_updown, sw_grey_down, linear_log_interp, bezier_interp
 
 contains
 
-  subroutine ts_Heng(nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, tau_IRl, mu_z, F0, Tint, AB, Beta_V, Beta_IR, net_F)
+  subroutine ts_Heng(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, tau_IRl, mu_z, F0, Tint, AB, Beta_V, Beta_IR, net_F, olr)
     implicit none
 
     !! Input variables
+    logical, intent(in) :: Bezier
     integer, intent(in) :: nlay, nlev
     real(dp), dimension(nlay), intent(in) :: Tl, pl
     real(dp), dimension(nlev), intent(in) :: pe
@@ -41,10 +45,13 @@ contains
 
     !! Output variables
     real(dp), dimension(nlev), intent(out) :: net_F
+    real(dp), intent(out) :: olr
 
     !! Work variables
     integer :: i, b
     real(dp) :: Finc, be_int, Finc_b, be_int_b
+    real(dp), dimension(nlay) :: lpl, lTl
+    real(dp), dimension(nlev) :: lpe
     real(dp), dimension(nlev) :: Te, be, be_b
     real(dp), dimension(nlay) :: bl, bl_b
     real(dp), dimension(nlev) :: sw_down, sw_up, lw_down, lw_up
@@ -52,13 +59,31 @@ contains
     real(dp), dimension(2,nlev) :: lw_down_b, lw_up_b
     real(dp), dimension(nlev) :: lw_net, sw_net
 
-    !! Find temperature at layer edges through linear interpolation and extrapolation
-    do i = 2, nlay
-      call linear_log_interp(pe(i), pl(i-1), pl(i), Tl(i-1), Tl(i), Te(i))
-      !print*, i, pl(i), pl(i-1), pe(i), Tl(i-1), Tl(i), Te(i)
-    end do
-    Te(1) = Tl(1) + (pe(1) - pe(2))/(pl(1) - pe(2)) * (Tl(1) - Te(2))
-    Te(nlev) = Tl(nlay) + (pe(nlev) - pe(nlay))/(pl(nlay) - pe(nlay)) * (Tl(nlay) - Te(nlay))
+    lpl(:) = log10(pl(:))
+    lpe(:) = log10(pe(:))
+    lTl(:) = log10(Tl(:))
+
+    !! Find temperature at layer edges through interpolation and extrapolation
+    if (Bezier .eqv. .True.) then
+      ! Perform interpolation using Bezier peicewise polynomial interpolation
+      do i = 2, nlay-1
+        call bezier_interp(lpl(i-1:i+1), lTl(i-1:i+1), 3, lpe(i), Te(i))
+        Te(i) = 10.0_dp**Te(i)
+        !print*, i, pl(i), pl(i-1), pe(i), Tl(i-1), Tl(i), Te(i)
+      end do
+      call bezier_interp(lpl(nlay-2:nlay), lTl(nlay-2:nlay), 3, lpe(nlay), Te(nlay))
+      Te(nlay) = 10.0_dp**Te(nlay)
+    else
+      ! Perform interpolation using linear interpolation
+      do i = 2, nlay
+        call linear_log_interp(pe(i), pl(i-1), pl(i), Tl(i-1), Tl(i), Te(i))
+        !print*, i, pl(i), pl(i-1), pe(i), Tl(i-1), Tl(i), Te(i)
+      end do
+    end if
+
+    ! Edges are linearly interpolated
+    Te(1) = 10.0_dp**(lTl(1) + (log10(pe(1)/pe(2))/log10(pl(1)/pe(2))) * log10(Tl(1)/Te(2)))
+    Te(nlev) = 10.0_dp**(lTl(nlay) + (log10(pe(nlev)/pe(nlay))/log10(pl(nlay)/pe(nlay))) * log10(Tl(nlay)/Te(nlay)))
 
     !! Shortwave flux calculation
     if (mu_z > 0.0_dp) then
@@ -94,6 +119,9 @@ contains
     lw_net(:) = lw_up(:) - lw_down(:)
     sw_net(:) = sw_up(:) - sw_down(:)
     net_F(:) = lw_net(:) + sw_net(:)
+
+    !! Output olr
+    olr = lw_up(1)
 
   end subroutine ts_Heng
 
@@ -217,14 +245,55 @@ contains
     real(dp), intent(out) :: yval
     real(dp) :: norm
 
-    lxval = log10(xval)
-    lx1 = log10(x1); lx2 = log10(x2)
     ly1 = log10(y1); ly2 = log10(y2)
 
-    norm = 1.0_dp / (lx2 - lx1)
+    norm = 1.0_dp / log10(x2/x1)
 
-    yval = 10.0_dp**((ly1 * (lx2 - lxval) + ly2 * (lxval - lx1)) * norm)
+    yval = 10.0_dp**((ly1 * log10(x2/xval) + ly2 * log10(xval/x1)) * norm)
 
   end subroutine linear_log_interp
 
+  subroutine bezier_interp(xi, yi, ni, x, y)
+    implicit none
+
+    integer, intent(in) :: ni
+    real(dp), dimension(ni), intent(in) :: xi, yi
+    real(dp), intent(in) :: x
+    real(dp), intent(out) :: y
+
+    real(dp) :: xc, dx, dx1, dy, dy1, w, yc, t, wlim, wlim1
+
+    !xc = (xi(1) + xi(2))/2.0_dp ! Control point (no needed here, implicitly included)
+    dx = xi(2) - xi(1)
+    dx1 = xi(3) - xi(2)
+    dy = yi(2) - yi(1)
+    dy1 = yi(3) - yi(2)
+
+    if (x > xi(1) .and. x < xi(2)) then
+      ! left hand side interpolation
+      !print*,'left'
+      w = dx1/(dx + dx1)
+      !wlim = 1.0_dp + 1.0_dp/(1.0_dp - (dy1/dy) * (dx/dx1))
+      !wlim1 = 1.0_dp/(1.0_dp - (dy/dy1) * (dx1/dx))
+      !if (w < wlim .or. w > wlim1) then
+      !  w = 1.0_dp
+      !end if
+      yc = yi(2) - dx/2.0_dp * (w*dy/dx + (1.0_dp - w)*dy1/dx1)
+      t = (x - xi(1))/dx
+      y = (1.0_dp - t)**2 * yi(1) + 2.0_dp*t*(1.0_dp - t)*yc + t**2*yi(2)
+    else ! (x > xi(2) and x < xi(3)) then
+      ! right hand side interpolation
+      !print*,'right'
+      w = dx/(dx + dx1)
+      !wlim = 1.0_dp/(1.0_dp - (dy1/dy) * (dx/dx1))
+      !wlim1 = 1.0_dp + 1.0_dp/(1.0_dp - (dy/dy1) * (dx1/dx))
+      !if (w < wlim .or. w > wlim1) then
+      !  w = 1.0_dp
+      !end if
+      yc = yi(2) + dx1/2.0_dp * (w*dy1/dx1 + (1.0_dp - w)*dy/dx)
+      t = (x - xi(2))/(dx1)
+      y = (1.0_dp - t)**2 * yi(2) + 2.0_dp*t*(1.0_dp - t)*yc + t**2*yi(3)
+    end if
+
+  end subroutine bezier_interp
 end module ts_Heng_mod

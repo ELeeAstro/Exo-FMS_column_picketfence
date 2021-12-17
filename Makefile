@@ -21,6 +21,18 @@ LFLAGS    = $(FFLAGS)
 # INCLUDES  =
 # LFLAGS    = $(FFLAGS)
 
+
+# for intel Compiler
+#======================
+# F90          = ifort
+# F90LINKER    = ifort
+# DEFS      =
+# #FFLAGS         =
+# FFLAGS   = -O3
+# INCLUDES  =
+# LFLAGS    = $(FFLAGS)
+
+
 OBJECTS = \
 	  toms715.o \
 	  call_twostr.o \
