@@ -23,7 +23,7 @@ This allows the atmosphere to cool from two photospheric regions, rather than on
 However, at very low pressures, isothermal T-p profiles are still produced.
 
 Using the fitting functions and relations from Parmentier et al. (2014, 2015), a quite realistic T-p profile can be produced, since the fitting functions were designed to reproduce the results of a correlated-k scheme as best as possible.
-Unfortunately the numerical results in 1D can in certain circumstances produce small spiky profiles, primarily due to the sensitivity of the opacity fitting function to the temperature, or, when the fitting function is outside it's valid range of temperatures (~100-4000 K) or pressures (~1e-4-1e3 pa).
+Unfortunately the numerical results in 1D can in certain circumstances produce small spiky profiles, primarily due to the sensitivity of the opacity fitting function to the temperature, or, when the fitting function is outside it's valid range of temperatures (~100-4000 K) or pressures (~1e-6-3e2 bar).
 Inside a GCM these small spikes are typically smoothed out by the dynamical processes.
 
 To compile enter 'make' in the main directory. To remove compiled code enter 'make clean'. \
