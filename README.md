@@ -1,6 +1,10 @@
 # Exo-FMS_column_nongrey
 
-Elspeth KH Lee - May 2021
+Major Update History
+ - May 2021 - initial models
+ - Dec 2021 - major overhual 
+
+Elspeth KH Lee - Dec 2021 
 
 This is one part of a series of codes that build upon different two-stream approaches and schemes, primarily useful for the GCM modeling community.
 This is the non-grey, picket fence version, with three bands in the visible, representing incident radiation from a host star, and two bands in the IR, representing the internal radiation propagating inside the planetary atmosphere.
@@ -22,14 +26,22 @@ Using the fitting functions and relations from Parmentier et al. (2014, 2015), a
 Unfortunately the numerical results in 1D can in certain circumstances produce small spiky profiles, primarily due to the sensitivity of the opacity fitting function to the temperature, or, when the fitting function is outside it's valid range of temperatures (~100-4000 K) or pressures (~1e-4-1e3 pa).
 Inside a GCM these small spikes are typically smoothed out by the dynamical processes.
 
+To compile enter 'make' in the main directory. To remove compiled code enter 'make clean'. \
+Some compiler options for gfortran, nvfortran and ifort are provided in the makefile.
+
 This code performs various two-stream approaches from the literature in a non-grey, picket fence context:
 1. Isothermal layer approximation
-2. Toon et al. method
+2. Toon et al. method (Scattering version in dev.)
 3. Short Characteristics method
 4. Heng et al. method
-5. Neil Lewis' scattering code, following Pierrehumbert (2010)
-6. Mendonca et al. method (IN DEVELOPMENT)
+5. Neil Lewis's scattering code, following Pierrehumbert (2010)
+6. Mendonca et al. method
 7. Two-stream DISORT version (w. modifications by Xianyu Tan)
+
+You can also see the header comments in the source code for some additional information.
+
+For the shortwave fluxes, for methods that do not contain a shortwave scattering mode we include the 'adding method' (Menconca et al. 2015 + references).
+We detect if any albedo is present in the column, and peform the adding method to calculate the scattered flux, otherwise if there is no albedo only the direct beam is used.
 
 This emulates a single column inside the Exo-FMS GCM and is useful for testing and developing new techniques
 as they would perform inside a GCM setting. This is also useful to see differences in each method and their various approximations.
@@ -48,8 +60,7 @@ ts_scheme: \
 'Shortchar' -  Short characteristics method \
 'Heng' - Heng et al. method \
 'Lewis_scatter' - Neil Lewis's scattering code, following Pierrehumbert (2010) \
-'Lewis_scatter_sw' - 'Lewis' but only shortwave scattering ('Shortchar' for IR) \
-'Mendonca' - Mendonca et al. method (IN DEVELOPMENT) \
+'Mendonca' - Mendonca et al. method \
 'Disort_scatter' - two-stream DISORT version with scattering
 
 opac_scheme: \
@@ -101,12 +112,11 @@ You will need to clean and recompile the code if these are changed.
 # Personal recommendations
 
 For non-scattering problems, we generally recommend that the short characteristics method be used, as it is fast, efficient, very stable and also very accurate. This is currently what is used inside Exo-FMS for the Hot Jupiter simulations, and is even fast enough for high-resolution cases.
-For scattering problems we recommend the two stream DISORT version, it is very reliable but generally slower compared to other scattering methods.
+For shortwave scattering problems we recommend the adding method as included (or using the two-stream DISORT), the adding method is generally fast and accurate (enough).
+For longwave scattering problems we recommend the two stream DISORT version, it is very reliable but generally slower compared to other scattering methods.
 
 # Future developments
 
-We will include versions that include multiple-scattering in the future. \
+We will include versions that include IR multiple-scattering in the future. \
 Additional opacity schemes from the literature can be added. \
-Ability to include solid surface temperatures and temperature evolution, this involves some extra switches and boundary conditions. \
-Window fractions and functions.
 Interpolating directly from the Freedman et al. (2014) tables rather than using the fitting function.
