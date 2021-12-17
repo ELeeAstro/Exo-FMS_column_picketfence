@@ -40,7 +40,7 @@ This code performs various two-stream approaches from the literature in a non-gr
 
 You can also see the header comments in the source code for some additional information.
 
-For the shortwave fluxes, for methods that do not contain a shortwave scattering mode we include the 'adding method' (Menconca et al. 2015 + references).
+For the shortwave fluxes, for methods that do not contain a shortwave scattering mode we include the 'adding method' (Mendonca et al. 2015 + references).
 We detect if any albedo is present in the column, and peform the adding method to calculate the scattered flux, otherwise if there is no albedo only the direct beam is used.
 
 This emulates a single column inside the Exo-FMS GCM and is useful for testing and developing new techniques
