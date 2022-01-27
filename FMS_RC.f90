@@ -229,10 +229,9 @@ program Exo_FMS_RC
       call ts_Toon(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, Beta_V, Beta_IR, &
       & sw_a, sw_g, 0.0_dp, net_F, olr, asr)
     case("Toon_scatter")
-      !! In development !!
       ! Toon method with scattering
-      call ts_Toon_scatter(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB,  Beta_V, Beta_IR, &
-      & sw_a, sw_g, lw_a, lw_g, net_F)
+      call ts_Toon_scatter(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, Beta_V, Beta_IR, &
+      & sw_a, sw_g, lw_a, lw_g, 0.0_dp, 0.0_dp, net_F, olr, asr)
     case('Shortchar')
       ! Short characteristics method without IR scattering
       call ts_short_char(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, Beta_V, Beta_IR, &
