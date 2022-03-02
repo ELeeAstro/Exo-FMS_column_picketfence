@@ -182,10 +182,19 @@ program Exo_FMS_RC
     dT_conv(:) = 0.0_dp
 
     select case(opac_scheme)
+
     case('Freedman')
       ! Calculate optical depth structure for Freedman et al. (2014) Rosseland mean fitting function scheme
-      tau_Ve(:,1) = 0.0_dp
-      tau_IRe(:,1) = 0.0_dp
+
+      ! Include optical depth component from 0 pressure, assuming constant T and p at boundary
+      call k_Ross_Freedman(Tl(1), pe(1), met, k_IRl(1,1))
+      k_Vl(:,1) = k_IRl(1,1) * gam_V(:)
+      k_IRl(2,1) = k_IRl(1,1) * gam_2
+      k_IRl(1,1) = k_IRl(1,1) * gam_1
+
+      tau_Ve(:,1) = (k_Vl(:,1) * pe(1)) / grav
+      tau_IRe(:,1) = (k_IRl(:,1) * pe(1)) / grav
+
       do k = 1, nlay
         call k_Ross_Freedman(Tl(k), pl(k), met, k_IRl(1,k))
         k_Vl(:,k) = k_IRl(1,k) * gam_V(:)
@@ -195,10 +204,19 @@ program Exo_FMS_RC
         tau_Ve(:,k+1) = tau_Ve(:,k) + (k_Vl(:,k) * dpe(k)) / grav
         tau_IRe(:,k+1) = tau_IRe(:,k) + (k_IRl(:,k) * dpe(k)) / grav
       end do
+
     case('Valencia')
       ! Calculate optical depth structure for Valencia et al. (2013) Rosseland mean fitting function scheme
-      tau_Ve(:,1) = 0.0_dp
-      tau_IRe(:,1) = 0.0_dp
+
+      ! Include optical depth component from 0 pressure, assuming constant T and p at boundary
+      call k_Ross_Valencia(Tl(1), pe(1), met, k_IRl(1,1))
+      k_Vl(:,1) = k_IRl(1,1) * gam_V(:)
+      k_IRl(2,1) = k_IRl(1,1) * gam_2
+      k_IRl(1,1) = k_IRl(1,1) * gam_1
+
+      tau_Ve(:,1) = (k_Vl(:,1) * pe(1)) / grav
+      tau_IRe(:,1) = (k_IRl(:,1) * pe(1)) / grav
+
       do k = 1, nlay
         call k_Ross_Valencia(Tl(k), pl(k), met, k_IRl(1,k))
         k_Vl(:,k) = k_IRl(1,k) * gam_V(:)
@@ -208,6 +226,7 @@ program Exo_FMS_RC
         tau_Ve(:,k+1) = tau_Ve(:,k) + (k_Vl(:,k) * dpe(k)) / grav
         tau_IRe(:,k+1) = tau_IRe(:,k) + (k_IRl(:,k) * dpe(k)) / grav
       end do
+
    case default
       print*, 'Invalid opac_scheme: ', trim(opac_scheme)
       stop
