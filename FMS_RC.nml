@@ -15,7 +15,7 @@ nstep = 1000000
 Rd_air = 3556.8
 cp_air = 1.3e4
 grav = 10.0
-mu_z = 1.0
+mu_z = 0.1
 Tirr = 1000.0
 Tint = 100.0
 
@@ -31,6 +31,10 @@ sw_ac = 0.0, 0.0, 0.0
 sw_gc = 0.0, 0.0, 0.0
 lw_ac = 0.0, 0.0
 lw_gc = 0.0, 0.0
+
+zcorr = .True.
+zcorr_meth = 1
+radius = 7.1492e7
 
 iIC = 4
 corr = .True.

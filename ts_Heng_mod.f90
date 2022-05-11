@@ -59,12 +59,14 @@ contains
     real(dp), dimension(2,nlev) :: lw_down_b, lw_up_b
     real(dp), dimension(nlev) :: lw_net, sw_net
 
-    lpl(:) = log10(pl(:))
-    lpe(:) = log10(pe(:))
-    lTl(:) = log10(Tl(:))
-
     !! Find temperature at layer edges through interpolation and extrapolation
     if (Bezier .eqv. .True.) then
+
+      ! Log the layer values and pressure edges for more accurate interpolation
+      lTl(:) = log10(Tl(:))
+      lpl(:) = log10(pl(:))
+      lpe(:) = log10(pe(:))
+
       ! Perform interpolation using Bezier peicewise polynomial interpolation
       do i = 2, nlay-1
         call bezier_interp(lpl(i-1:i+1), lTl(i-1:i+1), 3, lpe(i), Te(i))

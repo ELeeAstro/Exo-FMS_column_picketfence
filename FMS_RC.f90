@@ -47,6 +47,11 @@ program Exo_FMS_RC
 
   real(dp), allocatable, dimension(:,:) :: sw_a, sw_g, lw_a, lw_g
 
+  logical :: zcorr
+  integer :: zcorr_meth
+  real(dp) :: radius
+  real(dp), allocatable, dimension(:) :: mu_z_eff, alt, alp
+
   real(dp) :: cp_air, grav, k_IR, k_V, kappa_air, Rd_air
   real(dp) :: olr, asr
 
@@ -73,7 +78,7 @@ program Exo_FMS_RC
 
   namelist /FMS_RC_nml/ ts_scheme, opac_scheme, adj_scheme, nlay, a_sh, b_sh, pref, &
           & t_step, nstep, Rd_air, cp_air, grav, mu_z, Tirr, Tint, k_V, k_IR, AB, fl, met, &
-          & iIC, corr, table_num, sw_ac, sw_gc, lw_ac, lw_gc, Bezier
+          & iIC, corr, table_num, sw_ac, sw_gc, lw_ac, lw_gc, Bezier, zcorr, zcorr_meth, radius
 
   !! Read input variables from namelist
   open(newunit=u_nml, file='FMS_RC.nml', status='old', action='read')
@@ -112,6 +117,7 @@ program Exo_FMS_RC
   allocate(Tl(nlay), dT_rad(nlay), dT_conv(nlay), net_F(nlev))
   allocate(tau_Ve(3,nlev),tau_IRe(2,nlev), k_Vl(3,nlay), k_IRl(2,nlay))
   allocate(Beta_V(3), Beta_IR(2), gam_V(3))
+  allocate(alt(nlev), mu_z_eff(nlev), alp(nlev))
 
   if (ts_scheme == 'Heng') then
     allocate(tau_IRl(2,nlay))
@@ -227,10 +233,43 @@ program Exo_FMS_RC
         tau_IRe(:,k+1) = tau_IRe(:,k) + (k_IRl(:,k) * dpe(k)) / grav
       end do
 
-   case default
+    case default
       print*, 'Invalid opac_scheme: ', trim(opac_scheme)
       stop
     end select
+
+
+    if (zcorr .eqv. .True. .and. mu_z > 0.0_dp) then
+      ! First calculate the altitude at each level from the hypsometric equation
+      ! Assume constant gravity for simplicity
+      alt(nlev) = 0.0_dp
+      do k = nlay, 1, -1
+        alt(k) = alt(k+1) + (Rd_air*Tl(k))/grav * log(pe(k+1)/pe(k))
+      end do
+
+      select case(zcorr_meth)
+      case(1)
+        ! Basic geometric correction following Li & Shibata (2006) Eq. (2)
+        mu_z_eff(:) = sqrt(1.0 - (radius/(radius + alt(:)))**2 * (1.0 - mu_z**2)) 
+      case(2)
+        ! Spherical layer correction following Li & Shibata (2006) Eq.(10)
+        alp(nlev) = (alt(nlay) -  alt(nlev))/radius
+        do k = nlay,1,-1
+           alp(k) = (alt(k) -  alt(k+1))/(radius + alt(k))
+        end do
+        mu_z_eff(:) = (sqrt(1.0 - (radius/(radius + alt(:)))**2 * (1.0 - mu_z**2)) + &
+        & sqrt((1.0 + alp(:))**2 - (radius/(radius + alt(:)))**2 * (1.0 - mu_z**2))) / &
+        & (2.0 + alp(:))
+      case default
+        print*, 'Invalid zcorr_meth ', zcorr_meth
+        stop
+      end select
+    else
+      ! No correction, use single zenith angle
+      mu_z_eff(:) = mu_z
+    end if
+
+
 
 
     !! Two stream radiative transfer step
@@ -249,11 +288,11 @@ program Exo_FMS_RC
       & sw_a, sw_g, 0.0_dp, net_F, olr, asr)
     case("Toon_scatter")
       ! Toon method with scattering
-      call ts_Toon_scatter(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, Beta_V, Beta_IR, &
+      call ts_Toon_scatter(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z_eff, F0, Tint, AB, Beta_V, Beta_IR, &
       & sw_a, sw_g, lw_a, lw_g, 0.0_dp, 0.0_dp, net_F, olr, asr)
     case('Shortchar')
       ! Short characteristics method without IR scattering
-      call ts_short_char(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, Beta_V, Beta_IR, &
+      call ts_short_char(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z_eff, F0, Tint, AB, Beta_V, Beta_IR, &
       & sw_a, sw_g, 0.0_dp, net_F, olr, asr)
     case('Heng')
       ! Heng flux method without IR scattering

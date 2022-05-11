@@ -48,6 +48,8 @@ contains
     integer :: i, b
     real(dp) :: Finc, be_int, Finc_b, be_int_b
     real(dp), dimension(nlev) :: Te, be, be_b
+    real(dp), dimension(nlev) :: lpe
+    real(dp), dimension(nlay) :: lTl, lpl
     real(dp), dimension(nlev) :: sw_down, sw_up, lw_down, lw_up
     real(dp), dimension(3,nlev) :: sw_down_b, sw_up_b
     real(dp), dimension(2,nlev) :: lw_down_b, lw_up_b
@@ -55,12 +57,20 @@ contains
 
     !! Find temperature at layer edges through interpolation and extrapolation
     if (Bezier .eqv. .True.) then
+
+      ! Log the layer values and pressure edges for more accurate interpolation
+      lTl(:) = log10(Tl(:))
+      lpl(:) = log10(pl(:))
+      lpe(:) = log10(pe(:))
+
       ! Perform interpolation using Bezier peicewise polynomial interpolation
       do i = 2, nlay-1
-        call bezier_interp(pl(i-1:i+1), Tl(i-1:i+1), 3, pe(i), Te(i))
+        call bezier_interp(lpl(i-1:i+1), lTl(i-1:i+1), 3, lpe(i), Te(i))
+        Te(i) = 10.0_dp**(Te(i))
         !print*, i, pl(i), pl(i-1), pe(i), Tl(i-1), Tl(i), Te(i)
       end do
-      call bezier_interp(pl(nlay-2:nlay), Tl(nlay-2:nlay), 3, pe(nlay), Te(nlay))
+      call bezier_interp(lpl(nlay-2:nlay), lTl(nlay-2:nlay), 3, lpe(nlay), Te(nlay))
+      Te(nlay) = 10.0_dp**(Te(nlay))
     else
       ! Perform interpolation using linear interpolation
       do i = 2, nlay
