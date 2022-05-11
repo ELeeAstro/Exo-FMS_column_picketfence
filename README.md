@@ -113,7 +113,8 @@ You will need to clean and recompile the code if these are changed.
 
 For non-scattering problems, we generally recommend that the short characteristics method be used, as it is fast, efficient, very stable and also very accurate. This is currently what is used inside Exo-FMS for the Hot Jupiter simulations, and is even fast enough for high-resolution cases.
 For shortwave scattering problems we recommend the adding method as included (or using the two-stream Toon or DISORT methods), the adding method is generally fast and accurate (enough).
-For longwave scattering problems we recommend the two stream DISORT version, it is very reliable but generally slower compared to other scattering methods.
+For longwave scattering problems we recommend the two stream Toon scattering version.
+If that fails try the DISORT code, it is very reliable but generally slower compared to other scattering methods.
 
 # Future developments
 
