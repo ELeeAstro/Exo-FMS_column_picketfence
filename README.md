@@ -2,7 +2,8 @@
 
 Major Update History
  - May 2021 - initial models
- - Dec 2021 - major overhual 
+ - Dec 2021 - major overhual
+ - May 2022 - SW zenith angle geomteric correction added (not ready for all modes yet)
 
 Elspeth KH Lee - Dec 2021 
 
