@@ -32,13 +32,13 @@ contains
     logical, intent(in) :: Bezier
     integer, intent(in) :: nlay, nlev
     real(dp), dimension(nlay), intent(in) :: Tl, pl
-    real(dp), dimension(nlev), intent(in) :: pe
+    real(dp), dimension(nlev), intent(in) :: pe, mu_z
     real(dp), dimension(3,nlev), intent(in) :: tau_Ve
     real(dp), dimension(2,nlev), intent(in) :: tau_IRe
     real(dp), dimension(3,nlay), intent(in) :: sw_a, sw_g
     real(dp), dimension(3), intent(in) :: Beta_V
     real(dp), dimension(2), intent(in) :: Beta_IR
-    real(dp), intent(in) :: F0, mu_z, Tint, AB, sw_a_surf
+    real(dp), intent(in) :: F0, Tint, AB, sw_a_surf
 
     !! Output variables
     real(dp), intent(out) :: olr, asr
@@ -84,13 +84,13 @@ contains
     Te(nlev) = 10.0_dp**(log10(Tl(nlay)) + (log10(pe(nlev)/pe(nlay))/log10(pl(nlay)/pe(nlay))) * log10(Tl(nlay)/Te(nlay)))
 
     !! Shortwave flux calculation
-    if (mu_z > 0.0_dp) then
+    if (mu_z(nlev) > 0.0_dp) then
       Finc = (1.0_dp - AB) * F0
       sw_down(:) = 0.0_dp
       sw_up(:) = 0.0_dp
       do b = 1, 3
         Finc_b = Finc * Beta_V(b)
-        call sw_grey_updown_adding(nlay, nlev, Finc_b, tau_Ve(b,:), mu_z, sw_a(b,:), sw_g(b,:), sw_a_surf, &
+        call sw_grey_updown_adding(nlay, nlev, Finc_b, tau_Ve(b,:), mu_z(:), sw_a(b,:), sw_g(b,:), sw_a_surf, &
         & sw_down_b(b,:), sw_up_b(b,:))
         sw_down(:) = sw_down(:) + sw_down_b(b,:)
         sw_up(:) = sw_up(:) + sw_up_b(b,:)
@@ -173,8 +173,8 @@ contains
 
     !! Input variables
     integer, intent(in) :: nlay, nlev
-    real(dp), intent(in) :: Finc, mu_z, w_surf
-    real(dp), dimension(nlev), intent(in) :: tau_Ve
+    real(dp), intent(in) :: Finc, w_surf
+    real(dp), dimension(nlev), intent(in) :: tau_Ve, mu_z
     real(dp), dimension(nlay), intent(in) :: w_in, g_in
 
     !! Output variables
@@ -190,6 +190,7 @@ contains
     real(dp), dimension(nlev) :: lam, u, N, gam, alp
     real(dp), dimension(nlev) :: R_b, T_b, R, T
     real(dp), dimension(nlev) :: Tf
+    real(dp), dimension(nlev) :: cum_trans
 
     ! Design w and g to include surface property level
     w(1:nlay) = w_in(:)
@@ -200,10 +201,26 @@ contains
 
     ! If zero albedo across all atmospheric layers then return direct beam only
     if (all(w(:) <= 1.0e-12_dp)) then
-      sw_down(:) = Finc * mu_z * exp(-tau_Ve(:)/mu_z)
+
+      if (mu_z(nlev) == mu_z(1)) then
+        ! No zenith correction, use regular method
+        sw_down(:) = Finc * mu_z(nlev) * exp(-tau_Ve(:)/mu_z(nlev))
+      else
+        ! Zenith angle correction, use cumulative transmission function
+        cum_trans(1) = tau_Ve(1)/mu_z(1)
+        do k = 1, nlev-1
+          cum_trans(k+1) = cum_trans(k) + (tau_Ve(k+1) - tau_Ve(k))/mu_z(k+1)
+        end do
+        do k = 1, nlev
+          sw_down(k) = Finc * mu_z(nlev) * exp(-cum_trans(k))
+        end do
+      end if
+
       sw_down(nlev) = sw_down(nlev) * (1.0_dp - w_surf) ! The surface flux for surface heating is the amount of flux absorbed by surface
       sw_up(:) = 0.0_dp ! We assume no upward flux here even if surface albedo
+
       return
+
     end if
 
     w(nlev) = w_surf
@@ -225,8 +242,8 @@ contains
       w_s(k) = w(k) * ((1.0_dp - f(k))/(1.0_dp - w(k)*f(k)))
       g_s(k) = (g(k) - f(k))/(1.0_dp - f(k))
       lam(k) = sqrt(3.0_dp*(1.0_dp - w_s(k))*(1.0_dp - w_s(k)*g_s(k)))
-      gam(k) = 0.5_dp * w_s(k) * (1.0_dp + 3.0_dp*g_s(k)*(1.0_dp - w_s(k))*mu_z**2)/(1.0_dp - lam(k)**2*mu_z**2)
-      alp(k) = 0.75_dp * w_s(k) * mu_z * (1.0_dp + g_s(k)*(1.0_dp - w_s(k)))/(1.0_dp - lam(k)**2*mu_z**2)
+      gam(k) = 0.5_dp * w_s(k) * (1.0_dp + 3.0_dp*g_s(k)*(1.0_dp - w_s(k))*mu_z(k)**2)/(1.0_dp - lam(k)**2*mu_z(k)**2)
+      alp(k) = 0.75_dp * w_s(k) * mu_z(k) * (1.0_dp + g_s(k)*(1.0_dp - w_s(k)))/(1.0_dp - lam(k)**2*mu_z(k)**2)
       u(k) = (3.0_dp/2.0_dp) * ((1.0_dp - w_s(k)*g_s(k))/lam(k))
 
       lamtau = min(lam(k)*tau_Ve_s(k),99.0_dp)
@@ -237,7 +254,7 @@ contains
       R_b(k) = (u(k) + 1.0_dp)*(u(k) - 1.0_dp)*(1.0_dp/e_lamtau - e_lamtau)/N(k)
       T_b(k) = 4.0_dp * u(k)/N(k)
 
-      arg = min(tau_Ve_s(k)/mu_z,99.0_dp)
+      arg = min(tau_Ve_s(k)/mu_z(k),99.0_dp)
       Tf(k) = exp(-arg)
 
       apg = alp(k) + gam(k)
@@ -268,8 +285,8 @@ contains
     sw_up(nlev) = sw_down(nlev) * w_surf
 
     !! Scale with the incident flux
-    sw_down(:) = sw_down(:) * mu_z * Finc
-    sw_up(:) = sw_up(:) * mu_z * Finc
+    sw_down(:) = sw_down(:) * mu_z(nlev) * Finc
+    sw_up(:) = sw_up(:) * mu_z(nlev) * Finc
 
   end subroutine sw_grey_updown_adding
 

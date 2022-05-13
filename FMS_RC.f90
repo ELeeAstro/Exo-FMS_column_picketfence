@@ -284,7 +284,7 @@ program Exo_FMS_RC
       & sw_a, sw_g, 0.0_dp, net_F, olr, asr)
     case('Toon')
       ! Toon method without IR scattering
-      call ts_Toon(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, Beta_V, Beta_IR, &
+      call ts_Toon(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z_eff, F0, Tint, AB, Beta_V, Beta_IR, &
       & sw_a, sw_g, 0.0_dp, net_F, olr, asr)
     case("Toon_scatter")
       ! Toon method with scattering
@@ -309,7 +309,7 @@ program Exo_FMS_RC
       & sw_a, sw_g, lw_a, lw_g, net_F, olr, asr)
     case('Mendonca')
       ! Mendonca method without IR scattering
-      call ts_Mendonca(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, Beta_V, Beta_IR, &
+      call ts_Mendonca(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z_eff, F0, Tint, AB, Beta_V, Beta_IR, &
       & sw_a, sw_g, 0.0_dp, net_F, olr, asr)
     case('None')
     case default
