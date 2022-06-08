@@ -284,7 +284,7 @@ contains
         ! No zenith correction, use regular method
         sw_down(:) = Finc * mu_z(nlev) * exp(-tau_Ve(:)/mu_z(nlev))
       else
-        ! Zenith angle correction, use cumulative transmission function 
+        ! Zenith angle correction, use cumulative transmission function
         cum_trans(1) = tau_Ve(1)/mu_z(1)
         do k = 1, nlev-1
           cum_trans(k+1) = cum_trans(k) + (tau_Ve(k+1) - tau_Ve(k))/mu_z(k+1)
@@ -405,11 +405,11 @@ contains
       ! left hand side interpolation
       !print*,'left'
       w = dx1/(dx + dx1)
-      !wlim = 1.0_dp + 1.0_dp/(1.0_dp - (dy1/dy) * (dx/dx1))
-      !wlim1 = 1.0_dp/(1.0_dp - (dy/dy1) * (dx1/dx))
-      !if (w < wlim .or. w > wlim1) then
-      !  w = 1.0_dp
-      !end if
+      wlim = 1.0_dp + 1.0_dp/(1.0_dp - (dy1/dy) * (dx/dx1))
+      wlim1 = 1.0_dp/(1.0_dp - (dy/dy1) * (dx1/dx))
+      if (w < min(wlim,wlim1) .or. w > max(wlim,wlim1)) then
+        w = 1.0_dp
+      end if
       yc = yi(2) - dx/2.0_dp * (w*dy/dx + (1.0_dp - w)*dy1/dx1)
       t = (x - xi(1))/dx
       y = (1.0_dp - t)**2 * yi(1) + 2.0_dp*t*(1.0_dp - t)*yc + t**2*yi(2)
@@ -417,11 +417,11 @@ contains
       ! right hand side interpolation
       !print*,'right'
       w = dx/(dx + dx1)
-      !wlim = 1.0_dp/(1.0_dp - (dy1/dy) * (dx/dx1))
-      !wlim1 = 1.0_dp + 1.0_dp/(1.0_dp - (dy/dy1) * (dx1/dx))
-      !if (w < wlim .or. w > wlim1) then
-      !  w = 1.0_dp
-      !end if
+      wlim = 1.0_dp/(1.0_dp - (dy1/dy) * (dx/dx1))
+      wlim1 = 1.0_dp + 1.0_dp/(1.0_dp - (dy/dy1) * (dx1/dx))
+      if (w < min(wlim,wlim1) .or. w > max(wlim,wlim1)) then
+        w = 1.0_dp
+      end if
       yc = yi(2) + dx1/2.0_dp * (w*dy1/dx1 + (1.0_dp - w)*dy/dx)
       t = (x - xi(2))/(dx1)
       y = (1.0_dp - t)**2 * yi(2) + 2.0_dp*t*(1.0_dp - t)*yc + t**2*yi(3)

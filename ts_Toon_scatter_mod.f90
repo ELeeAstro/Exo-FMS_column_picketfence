@@ -1,7 +1,7 @@
 !!!
 ! Elspeth KH Lee - May 2021 : Initial version
 !                - Jan 2022 : Working version
-!                
+!
 ! sw: Toon et al. 1989 method following the CHIMERA implimentation
 ! lw: Two-stream method following the "Toon" method (Toon et al. 1989)
 !     Based on the CHIMERA code by Mike Line, but cleaned up slightly
@@ -124,7 +124,7 @@ contains
     ! Edges are linearly interpolated
     Te(1) = 10.0_dp**(log10(Tl(1)) + (log10(pe(1)/pe(2))/log10(pl(1)/pe(2))) * log10(Tl(1)/Te(2)))
     Te(nlev) = 10.0_dp**(log10(Tl(nlay)) + (log10(pe(nlev)/pe(nlay))/log10(pl(nlay)/pe(nlay))) * log10(Tl(nlay)/Te(nlay)))
- 
+
     !! Shortwave flux calculation
     if (mu_z(nlev) > 0.0_dp) then
       Finc = (1.0_dp - AB) * F0
@@ -154,7 +154,7 @@ contains
       & lw_up_b(b,:), lw_down_b(b,:))
       lw_up(:) = lw_up(:) + lw_up_b(b,:)
       lw_down(:) = lw_down(:) + lw_down_b(b,:)
-    end do    
+    end do
 
     !! Net fluxes at each level
     lw_net(:) = lw_up(:) - lw_down(:)
@@ -623,11 +623,11 @@ contains
       ! left hand side interpolation
       !print*,'left'
       w = dx1/(dx + dx1)
-      !wlim = 1.0_dp + 1.0_dp/(1.0_dp - (dy1/dy) * (dx/dx1))
-      !wlim1 = 1.0_dp/(1.0_dp - (dy/dy1) * (dx1/dx))
-      !if (w < wlim .or. w > wlim1) then
-      !  w = 1.0_dp
-      !end if
+      wlim = 1.0_dp + 1.0_dp/(1.0_dp - (dy1/dy) * (dx/dx1))
+      wlim1 = 1.0_dp/(1.0_dp - (dy/dy1) * (dx1/dx))
+      if (w < min(wlim,wlim1) .or. w > max(wlim,wlim1)) then
+        w = 1.0_dp
+      end if
       yc = yi(2) - dx/2.0_dp * (w*dy/dx + (1.0_dp - w)*dy1/dx1)
       t = (x - xi(1))/dx
       y = (1.0_dp - t)**2 * yi(1) + 2.0_dp*t*(1.0_dp - t)*yc + t**2*yi(2)
@@ -635,11 +635,11 @@ contains
       ! right hand side interpolation
       !print*,'right'
       w = dx/(dx + dx1)
-      !wlim = 1.0_dp/(1.0_dp - (dy1/dy) * (dx/dx1))
-      !wlim1 = 1.0_dp + 1.0_dp/(1.0_dp - (dy/dy1) * (dx1/dx))
-      !if (w < wlim .or. w > wlim1) then
-      !  w = 1.0_dp
-      !end if
+      wlim = 1.0_dp/(1.0_dp - (dy1/dy) * (dx/dx1))
+      wlim1 = 1.0_dp + 1.0_dp/(1.0_dp - (dy/dy1) * (dx1/dx))
+      if (w < min(wlim,wlim1) .or. w > max(wlim,wlim1)) then
+        w = 1.0_dp
+      end if
       yc = yi(2) + dx1/2.0_dp * (w*dy1/dx1 + (1.0_dp - w)*dy/dx)
       t = (x - xi(2))/(dx1)
       y = (1.0_dp - t)**2 * yi(2) + 2.0_dp*t*(1.0_dp - t)*yc + t**2*yi(3)

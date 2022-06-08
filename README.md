@@ -5,7 +5,7 @@ Major Update History
  - Dec 2021 - major overhual
  - May 2022 - SW zenith angle geomteric correction added (not ready for all modes yet)
 
-Elspeth KH Lee - Dec 2021 
+Elspeth KH Lee - Dec 2021
 
 This is one part of a series of codes that build upon different two-stream approaches and schemes, primarily useful for the GCM modeling community.
 This is the non-grey, picket fence version, with three bands in the visible, representing incident radiation from a host star, and two bands in the IR, representing the internal radiation propagating inside the planetary atmosphere.
@@ -89,16 +89,22 @@ Tint - Internal temperature
 k_V - visible band opacity (m2 kg-1) \
 k_IR - IR band opacity (m2 kg-1) \
 AB - Bond albedo \
-fl - The Heng et al. (2011) parameter used for pressure dependent IR optical depths
+fl - The Heng et al. (2011) parameter used for pressure dependent IR optical depths \
+met - metallicty in dex solar (M/H)
+
+Bezier - use Bezier interpolation for Temperature levels (.True.)
 
 sw_ac(3) - shortwave single scattering albedo (constant at all layers) \
 sw_gc(3) - shortwave asymmetry factor (constant at all layers) \
 lw_ac(2) - longwave single scattering albedo (constant at all layers) \
 lw_gc(2) - longwave asymmetry factor (constant at all layers)
 
+zcorr - include zenith angle correction (.True.) \
+zcorr_meth - zenith angle correction method (1,2)  \
+radius - radius of the planet at surface (m)
+
 iIC - Initial condition selection integer (4 = Parmentier et al. (2015) profile using Tirr and Tint) \
 corr - Flag to perform the adiabatic gradient correction in the initial conditions \
-met - metallicty in dex solar (M/H) \
 table_num - 1 = Parmentier et al. (2015) table with TiO & VO, 2 = without TiO & VO table
 
 # Plotting results
