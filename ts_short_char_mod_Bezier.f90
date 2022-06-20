@@ -214,7 +214,7 @@ contains
       !! Prepare loop
       do k = 1, nlay
         !  de la Cruz Rodriguez and Piskunov 2013 Bezier interpolant parameters
-        if (del(k) <= 1.0e-4_dp) then
+        if (dtau(k) <= 1.0e-3_dp) then
           ! If we are in very low optical depth regime,
           ! then use a Taylor expansion following [CR&P13]
           del3 = del(k)**3
