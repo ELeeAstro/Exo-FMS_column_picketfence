@@ -8,7 +8,7 @@
 !     Cons: No lw scattering
 !!!
 
-module ts_short_char_mod
+module ts_short_char_mod_linear
   use, intrinsic :: iso_fortran_env
   implicit none
 
@@ -57,13 +57,13 @@ module ts_short_char_mod
   ! real(dp), dimension(nmu), parameter :: wuarr = &
   !   & (/0.0157479145_dp, 0.0739088701_dp, 0.1463869871_dp, 0.1671746381_dp, 0.0967815902_dp/)
 
-  public :: ts_short_char
+  public :: ts_short_char_linear
   private :: lw_grey_updown_linear, sw_grey_updown_adding, linear_log_interp, bezier_interp
 
 contains
 
-  subroutine ts_short_char(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, Beta_V, Beta_IR, &
-    & sw_a, sw_g, sw_a_surf, net_F, olr, asr)
+  subroutine ts_short_char_linear(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, &
+    & mu_z, F0, Tint, AB, Beta_V, Beta_IR, sw_a, sw_g, sw_a_surf, net_F, olr, asr)
     implicit none
 
     !! Input variables
@@ -146,7 +146,7 @@ contains
     do b = 1, 2
       be_b(:) = be(:) * Beta_IR(b)
       be_int_b = be_int * Beta_IR(b)
-      call lw_grey_updown_linear(nlay, nlev, be_b, be_int_b, tau_IRe(b,:),  lw_up_b(b,:), lw_down_b(b,:))
+      call lw_grey_updown_linear(nlay, nlev, be_b, be_int_b, tau_IRe(b,:), lw_up_b(b,:), lw_down_b(b,:))
       lw_up(:) = lw_up(:) + lw_up_b(b,:)
       lw_down(:) = lw_down(:) + lw_down_b(b,:)
     end do
@@ -162,7 +162,7 @@ contains
     !! Output asr
     asr = sw_down(1) - sw_up(1)
 
-  end subroutine ts_short_char
+  end subroutine ts_short_char_linear
 
   subroutine lw_grey_updown_linear(nlay, nlev, be, be_int, tau_IRe, lw_up, lw_down)
     implicit none
@@ -178,14 +178,12 @@ contains
     !! Work variables and arrays
     integer :: k, m
     real(dp), dimension(nlay) :: dtau, edel
-    real(dp) :: del, e0i, e1i, e1i_del
+    real(dp), dimension(nlay) :: del, e0i, e1i, e1i_del
     real(dp), dimension(nlay) :: Am, Bm, Gp, Bp
     real(dp), dimension(nlev) :: lw_up_g, lw_down_g
 
     !! Calculate dtau in each layer
-    do k = 1, nlay
-      dtau(k) = tau_IRe(k+1) - tau_IRe(k)
-    end do
+    dtau(:) = tau_IRe(2:) - tau_IRe(1:nlay)
 
     ! Zero the total flux arrays
     lw_up(:) = 0.0_dp
@@ -194,29 +192,28 @@ contains
     !! Start loops to integrate in mu space
     do m = 1, nmu
 
+      del(:) = dtau(:)/uarr(m)
+      edel(:) = exp(-del(:))
+      e0i(:) = 1.0_dp - edel(:)
+
       !! Prepare loop
-      do k = 1, nlay
-        ! Olson & Kunasz (1987) linear interpolant parameters
-        del = dtau(k)/uarr(m)
-        edel(k) = exp(-del)
-        e0i = 1.0_dp - edel(k)
-        e1i = del - e0i
+      ! Olson & Kunasz (1987) linear interpolant parameters
+      where (edel(:) > 0.999_dp)
+        ! If we are in very low optical depth regime, then use an isothermal approximation
+        Am(:) = (0.5_dp*(be(2:) + be(1:nlay)) * e0i(:))/be(1:nlay)
+        Bm(:) = 0.0_dp
+        Gp(:) = 0.0_dp
+        Bp(:) = Am(:)
+      elsewhere
+        ! Use linear interpolants
+        e1i(:) = del(:) - e0i(:)
+        e1i_del(:) = e1i(:)/del(:) ! The equivalent to the linear in tau term
 
-        e1i_del = e1i/del ! The equivalent to the linear in tau term
-
-        if (dtau(k) < 1.0e-6_dp) then
-          ! If we are in very low optical depth regime, then use an isothermal approximation
-          Am(k) = (0.5_dp*(be(k+1) + be(k)) * e0i)/be(k)
-          Bm(k) = 0.0_dp
-          Gp(k) = 0.0_dp
-          Bp(k) = Am(k)
-        else
-          Am(k) = e0i - e1i_del ! Am(k) = Gp(k), just indexed differently
-          Bm(k) = e1i_del ! Bm(k) = Bp(k), just indexed differently
-          Gp(k) = Am(k)
-          Bp(k) = Bm(k)
-        end if
-      end do
+        Am(:) = e0i(:) - e1i_del(:) ! Am(k) = Gp(k), just indexed differently
+        Bm(:) = e1i_del(:) ! Bm(k) = Bp(k), just indexed differently
+        Gp(:) = Am(:)
+        Bp(:) = Bm(:)
+      end where
 
       !! Begin two-stream loops
       !! Perform downward loop first
@@ -429,4 +426,4 @@ contains
 
   end subroutine bezier_interp
 
-end module ts_short_char_mod
+end module ts_short_char_mod_linear

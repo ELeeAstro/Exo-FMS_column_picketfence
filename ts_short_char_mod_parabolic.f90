@@ -1,14 +1,16 @@
+!!! In development !!!
+
 !!!
 ! Elspeth KH Lee - Jun 2022 : Initial version
 !
 ! sw: Adding layer method with scattering
 ! lw: Two-stream method following the short characteristics method (e.g. Helios-r2: Kitzmann et al. 2018)
-!     Uses the method of short characteristics (Olson & Kunasz 1987) with Bezier interpolants (de la Cruz Rodriguez and Piskunov 2013 [CR&P13]).
-!     Pros: Very fast, accurate at high optical depths, very stable, extreamly smooth heating profiles
+!     Uses the method of short characteristics (Olson & Kunasz 1987) with quadratic interpolants.
+!     Pros: Not many compared to linear or Bezier interpolants, use for general interest only
 !     Cons: No lw scattering
 !!!
 
-module ts_short_char_mod_bezier
+module ts_short_char_mod_parabolic
   use, intrinsic :: iso_fortran_env
   implicit none
 
@@ -20,7 +22,7 @@ module ts_short_char_mod_bezier
   real(dp), parameter :: twopi = 2.0_dp * pi
   real(dp), parameter :: sb = 5.670374419e-8_dp
 
-  !! Gauss quadrature variables, cosine angle values (uarr) and weights (w)
+  !! Gauss quadrature variables, cosine angle values (uarr] and weights (w)
   !! here you can comment in/out groups of mu values for testing
   !! make sure to make clean and recompile if you change these
 
@@ -57,12 +59,12 @@ module ts_short_char_mod_bezier
   ! real(dp), dimension(nmu), parameter :: wuarr = &
   !   & (/0.0157479145_dp, 0.0739088701_dp, 0.1463869871_dp, 0.1671746381_dp, 0.0967815902_dp/)
 
-  public :: ts_short_char_Bezier
-  private :: lw_grey_updown_Bezier, sw_grey_updown_adding, linear_log_interp, bezier_interp, bezier_interp_yc
+  public :: ts_short_char_parabolic
+  private :: lw_grey_updown_parabolic, sw_grey_updown_adding, linear_log_interp, bezier_interp
 
 contains
 
-  subroutine ts_short_char_Bezier(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, &
+  subroutine ts_short_char_parabolic(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, &
     & mu_z, F0, Tint, AB, Beta_V, Beta_IR, sw_a, sw_g, sw_a_surf, net_F, olr, asr)
     implicit none
 
@@ -146,7 +148,7 @@ contains
     do b = 1, 2
       be_b(:) = be(:) * Beta_IR(b)
       be_int_b = be_int * Beta_IR(b)
-      call lw_grey_updown_Bezier(nlay, nlev, be_b, be_int_b, tau_IRe(b,:),  lw_up_b(b,:), lw_down_b(b,:))
+      call lw_grey_updown_parabolic(nlay, nlev, be_b, be_int_b, tau_IRe(b,:),  lw_up_b(b,:), lw_down_b(b,:))
       lw_up(:) = lw_up(:) + lw_up_b(b,:)
       lw_down(:) = lw_down(:) + lw_down_b(b,:)
     end do
@@ -162,9 +164,9 @@ contains
     !! Output asr
     asr = sw_down(1) - sw_up(1)
 
-  end subroutine ts_short_char_Bezier
+  end subroutine ts_short_char_parabolic
 
-  subroutine lw_grey_updown_Bezier(nlay, nlev, be, be_int, tau_IRe, lw_up, lw_down)
+  subroutine lw_grey_updown_parabolic(nlay, nlev, be, be_int, tau_IRe, lw_up, lw_down)
     implicit none
 
     !! Input variables
@@ -177,26 +179,15 @@ contains
 
     !! Work variables and arrays
     integer :: k, m
-    real(dp), dimension(nlay) :: dtau, del, edel, del2, del3, edel_lim
-    real(dp), dimension(nlay) :: tau_mid, ltau_mid
-    real(dp), dimension(nlev) :: lbe, ltau
-    real(dp), dimension(nlay) :: Ak, Bk, Gk, Ck
+    real(dp), dimension(nlay) :: dtau, edel
+    real(dp), dimension(nlay) :: del, e0i, e1i, e1i_del
+    real(dp), dimension(nlay) :: Am, Bm, Gm, Ap, Bp, Gp
     real(dp), dimension(nlev) :: lw_up_g, lw_down_g
 
     !! Calculate dtau in each layer
-    dtau(:) = tau_IRe(2:) - tau_IRe(1:nlay)
-    tau_mid(:) = (tau_IRe(2:) + tau_IRe(1:nlay))/2.0_dp
-
-    ltau(:) = log10(tau_IRe(:))
-    ltau_mid(:) = log10(tau_mid(:))
-    lbe(:) = log10(be(:))
-
-    ! Find the source function at Bezier control point and the center of optical depth space of each layer
-    call bezier_interp_yc(ltau(1:3), lbe(1:3), 3, ltau_mid(1), Ck(1))
-    do k = 2, nlay
-      call bezier_interp_yc(ltau(k-1:k+1), lbe(k-1:k+1), 3, ltau_mid(k), Ck(k))
+    do k = 1, nlay
+      dtau(k) = tau_IRe(k+1) - tau_IRe(k)
     end do
-    Ck(:) = 10.0_dp**(Ck(:))
 
     ! Zero the total flux arrays
     lw_up(:) = 0.0_dp
@@ -206,43 +197,48 @@ contains
     do m = 1, nmu
 
       del(:) = dtau(:)/uarr(m)
-      del2(:) = del(:)**2
-      del3(:) = del(:)**3
       edel(:) = exp(-del(:))
-      edel_lim(:) = &
-      & max(1.0_dp - del(:) + del2(:)/2.0_dp - del3(:)/6.0_dp, 0.0_dp)/edel(:)
+      e0i(:) = 1.0_dp - edel(:)
 
       !! Prepare loop
-      ! de la Cruz Rodriguez and Piskunov 2013 Bezier interpolant parameters
-      where (edel_lim(:) > 0.999_dp)
-        ! If we are in very low optical depth regime,
-        ! then use a Taylor expansion following [CR&P13]
-        Ak(:) = del(:)/3.0_dp - del2(:)/12.0_dp + del3(:)/60.0_dp
-        Bk(:) = del(:)/3.0_dp - del2(:)/4.0_dp + del3(:)/10.0_dp
-        Gk(:) = del(:)/3.0_dp - del2(:)/6.0_dp + del3(:)/20.0_dp
-      elsewhere
-        ! Use Bezier interpolants
-        Ak(:) = (2.0_dp + del2(:) - 2.0_dp*del(:) - 2.0_dp*edel(:))/del2(:)
-        Bk(:) = (2.0_dp - (2.0_dp + 2.0_dp*del(:) + del2(:))*edel(:))/del2(:)
-        Gk(:) = (2.0_dp*del(:) - 4.0_dp + (2.0_dp*del(:) + 4.0_dp)*edel(:))/del2(:)
-      end where
+      ! Olson & Kunasz (1987) parabolic interpolant parameters
+      do k = 1, nlay
+        if (edel(k) > 0.999_dp) then
+          ! If we are in very low optical depth regime, then use an isothermal approximation
+          Am(k) = (0.5_dp*(be(k+1) + be(k)) * e0i(k))/be(k)
+          Bm(k) = 0.0_dp
+          Gm(k) = 0.0_dp
+          Ap(k) = 0.0_dp
+          Bp(k) = Am(:)
+          Gp(k) = 0.0_dp
+        else
+          ! Use parabolic interpolants
+          e1i(k) = del(k) - e0i(k)
+          e2i(k) = del(k)**2 - 2.0_dp*e1i(k)
+
+          Am(k) = e0i(k) + (e1i(k) - (del(k+1) + 2.0_dp*del(k))*e1i(k) ! Am(k) = Gp(k), just indexed differently
+          Bm(k) = e1i_del(k) ! Bm(k) = Bp(k), just indexed differently
+          Gm(k) = 0.0_dp
+          Ap(k) = 0.0_dp
+          Bp(k) = Bm(k)
+          Gp(k) = Am(k)
+        end if
+      end do
 
       !! Begin two-stream loops
       !! Perform downward loop first
       ! Top boundary condition - 0 flux downward from top boundary
       lw_down_g(1) = 0.0_dp
       do k = 1, nlay
-         lw_down_g(k+1) = lw_down_g(k)*edel(k) + Ak(k)*be(k+1) + Bk(k)*be(k) + Gk(k)*Ck(k)! TS intensity
+        lw_down_g(k+1) = lw_down_g(k)*edel(k) + Am(k)*be(k) + Bm(k)*be(k+1) ! TS intensity
       end do
 
       !! Perform upward loop
       ! Lower boundary condition - internal heat definition Fint = F_down - F_up
-      ! here the lw_a_surf is assumed to be = 1 as per the definition
       ! here we use the same condition but use intensity units to be consistent
       lw_up_g(nlev) = lw_down_g(nlev) + be_int
       do k = nlay, 1, -1
-        lw_up_g(k) = lw_up_g(k+1)*edel(k)  + Ak(k)*be(k) + Bk(k)*be(k+1) + Gk(k)*Ck(k)! TS intensity
-        !print*, k, lw_up_g(k), lw_down_g(k), Ak(k), Bk(k), Gk(k)
+        lw_up_g(k) = lw_up_g(k+1)*edel(k) + Bp(k)*be(k) + Gp(k)*be(k+1) ! TS intensity
       end do
 
       !! Sum up flux arrays with Gaussian quadrature weights and points for this mu stream
@@ -255,7 +251,7 @@ contains
     lw_down(:) = twopi * lw_down(:)
     lw_up(:) = twopi * lw_up(:)
 
-  end subroutine lw_grey_updown_Bezier
+  end subroutine lw_grey_updown_parabolic
 
   subroutine sw_grey_updown_adding(nlay, nlev, Finc, tau_Ve, mu_z, w_in, g_in, w_surf, sw_down, sw_up)
     implicit none
@@ -271,11 +267,11 @@ contains
 
     !! Work variables
     integer :: k
-    real(dp) :: lamtau, e_lamtau, arg, apg, amg
+    real(dp) :: lamtau, e_lamtau, lim, arg, apg, amg
     real(dp), dimension(nlev) ::  w, g, f
     real(dp), dimension(nlev) :: tau_Ve_s
     real(dp), dimension(nlay) :: tau
-    real(dp), dimension(nlev) :: tau_s, w_s, g_s
+    real(dp), dimension(nlev) :: tau_s, w_s, f_s, g_s
     real(dp), dimension(nlev) :: lam, u, N, gam, alp
     real(dp), dimension(nlev) :: R_b, T_b, R, T
     real(dp), dimension(nlev) :: Tf
@@ -384,7 +380,7 @@ contains
     implicit none
 
     real(dp), intent(in) :: xval, y1, y2, x1, x2
-    real(dp) :: ly1, ly2
+    real(dp) :: lxval, ly1, ly2, lx1, lx2
     real(dp), intent(out) :: yval
     real(dp) :: norm
 
@@ -396,46 +392,6 @@ contains
 
   end subroutine linear_log_interp
 
-  subroutine bezier_interp_yc(xi, yi, ni, x, yc)
-    implicit none
-
-    integer, intent(in) :: ni
-    real(dp), dimension(ni), intent(in) :: xi, yi
-    real(dp), intent(in) :: x
-    real(dp), intent(out) :: yc
-
-    real(dp) :: dx, dx1, dy, dy1, w, wlim, wlim1
-
-    !xc = (xi(1) + xi(2))/2.0_dp ! Control point (no needed here, implicitly included)
-    dx = xi(2) - xi(1)
-    dx1 = xi(3) - xi(2)
-    dy = yi(2) - yi(1)
-    dy1 = yi(3) - yi(2)
-
-    if (x > xi(1) .and. x < xi(2)) then
-      ! left hand side interpolation
-      !print*,'left'
-      w = dx1/(dx + dx1)
-      wlim = 1.0_dp + 1.0_dp/(1.0_dp - (dy1/dy) * (dx/dx1))
-      wlim1 = 1.0_dp/(1.0_dp - (dy/dy1) * (dx1/dx))
-      if (w < min(wlim,wlim1) .or. w > max(wlim,wlim1)) then
-        w = 1.0_dp
-      end if
-      yc = yi(2) - dx/2.0_dp * (w*dy/dx + (1.0_dp - w)*dy1/dx1)
-    else ! (x > xi(2) and x < xi(3)) then
-      ! right hand side interpolation
-      !print*,'right'
-      w = dx/(dx + dx1)
-      wlim = 1.0_dp/(1.0_dp - (dy1/dy) * (dx/dx1))
-      wlim1 = 1.0_dp + 1.0_dp/(1.0_dp - (dy/dy1) * (dx1/dx))
-      if (w < min(wlim,wlim1) .or. w > max(wlim,wlim1)) then
-        w = 1.0_dp
-      end if
-      yc = yi(2) + dx1/2.0_dp * (w*dy1/dx1 + (1.0_dp - w)*dy/dx)
-    end if
-
-  end subroutine bezier_interp_yc
-
   subroutine bezier_interp(xi, yi, ni, x, y)
     implicit none
 
@@ -444,7 +400,7 @@ contains
     real(dp), intent(in) :: x
     real(dp), intent(out) :: y
 
-    real(dp) :: dx, dx1, dy, dy1, w, yc, t, wlim, wlim1
+    real(dp) :: xc, dx, dx1, dy, dy1, w, yc, t, wlim, wlim1
 
     !xc = (xi(1) + xi(2))/2.0_dp ! Control point (no needed here, implicitly included)
     dx = xi(2) - xi(1)
@@ -480,4 +436,4 @@ contains
 
   end subroutine bezier_interp
 
-end module ts_short_char_mod_bezier
+end module ts_short_char_mod_parabolic

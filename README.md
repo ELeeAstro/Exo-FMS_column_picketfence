@@ -1,16 +1,17 @@
 # Exo-FMS_column_nongrey
 
-Major Update History
+Major Update History:
  - May 2021 - initial models
- - Dec 2021 - major overhual
- - May 2022 - SW zenith angle geomteric correction added (not ready for all modes yet)
+ - Dec 2021 - major overhaul
+ - May 2022 - SW zenith angle geometric correction added (not ready for all modes yet)
+ - Jun 2022 - Bezier short char added
 
 Elspeth KH Lee - Dec 2021
 
-This is one part of a series of codes that build upon different two-stream approaches and schemes, primarily useful for the GCM modeling community.
+This is one part of a series of codes that build upon different two-stream approaches and schemes, primarily useful for the GCM modelling community.
 This is the non-grey, picket fence version, with three bands in the visible, representing incident radiation from a host star, and two bands in the IR, representing the internal radiation propagating inside the planetary atmosphere.
 
-Some useful references useful for non-grey, picket fence modeling are: \
+Some useful references useful for non-grey, picket fence modelling are: \
 Chandrasekhar (1935) \
 Parmentier & Guillot (2014) \
 Parmentier et al.  2015) \
@@ -23,7 +24,8 @@ The fraction of the total flux in each band is controlled by a parameter (Beta_I
 This allows the atmosphere to cool from two photospheric regions, rather than one in the semi-grey scheme, leading to more realistic cooling in the upper atmosphere.
 However, at very low pressures, isothermal T-p profiles are still produced.
 
-Using the fitting functions and relations from Parmentier et al. (2014, 2015), a quite realistic T-p profile can be produced, since the fitting functions were designed to reproduce the results of a correlated-k scheme as best as possible.
+Using the fitting functions and relations from Parmentier et al. (2014, 2015) a quite realistic T-p profile can be produced.
+This is because the fitting functions were designed to reproduce the results of a correlated-k scheme as best as possible.
 Unfortunately the numerical results in 1D can in certain circumstances produce small spiky profiles, primarily due to the sensitivity of the opacity fitting function to the temperature, or, when the fitting function is outside it's valid range of temperatures (~100-4000 K) or pressures (~1e-4-1e3 pa).
 Inside a GCM these small spikes are typically smoothed out by the dynamical processes.
 
@@ -32,17 +34,17 @@ Some compiler options for gfortran, nvfortran and ifort are provided in the make
 
 This code performs various two-stream approaches from the literature in a non-grey, picket fence context:
 1. Isothermal layer approximation
-2. Toon et al. method (Scattering and non scattering versions)
-3. Short Characteristics method
-4. Heng et al. method
+2. Toon et al. method (w. scattering w.o. scattering versions)
+3. Short Characteristics method (linear, quadratic or Bezier interpolant versions)
+4. Heng et al. method (Improved TS method in dev.)
 5. Neil Lewis's scattering code, following Pierrehumbert (2010)
-6. Mendonca et al. method
+6. Mendonca et al. methods
 7. Two-stream DISORT version (w. modifications by Xianyu Tan)
 
 You can also see the header comments in the source code for some additional information.
 
-For the shortwave fluxes, for methods that do not contain a shortwave scattering mode we include the 'adding method' (Menconca et al. 2015 + references).
-We detect if any albedo is present in the column, and peform the adding method to calculate the scattered flux, otherwise if there is no albedo only the direct beam is used.
+For the shortwave fluxes, for methods that do not contain a shortwave scattering mode we include the 'adding method' (Mendonca et al. 2015 + references).
+We detect if any albedo is present in the column, and perform the adding method to calculate the scattered flux, otherwise if there is no albedo only the direct beam is used.
 
 This emulates a single column inside the Exo-FMS GCM and is useful for testing and developing new techniques
 as they would perform inside a GCM setting. This is also useful to see differences in each method and their various approximations.
@@ -58,7 +60,9 @@ ts_scheme: \
 'Isothermal_2' - Isothermal ts method - high optical depth version \
 'Toon' - Toon et al. ts method \
 'Toon_scatter' - Toon et al. ts method with scattering \
-'Shortchar' -  Short characteristics method \
+'Shortchar_linear' - Short characteristics method with linear interpolants \
+'Shortchar_parabolic' - Short characteristics method with parabolic interpolants \
+'Shortchar_Bezier' - Short characteristics method with Bezier interpolants \
 'Heng' - Heng et al. method \
 'Lewis_scatter' - Neil Lewis's scattering code, following Pierrehumbert (2010) \
 'Mendonca' - Mendonca et al. method \
@@ -79,7 +83,7 @@ pref - reference surface pressure (pa)
 
 t_step - time step in seconds \
 nstep - number of integer timesteps \
-Rd_air - specific gas constant of the air (J kg-1 K-1)\
+Rd_air - specific gas constant of the air (J kg-1 K-1) \
 cp_air - specific heat capacity (constant pressure) of the air (J kg-1 K-1) \
 grav - gravitational acceleration constant (m s-2) \
 mu_z - cosine angle of the solar zenith angle \
@@ -90,9 +94,9 @@ k_V - visible band opacity (m2 kg-1) \
 k_IR - IR band opacity (m2 kg-1) \
 AB - Bond albedo \
 fl - The Heng et al. (2011) parameter used for pressure dependent IR optical depths \
-met - metallicty in dex solar (M/H)
+met - metallicity in dex solar (M/H)
 
-Bezier - use Bezier interpolation for Temperature levels (.True.)
+Bezier - use Bezier interpolation for Temperature layer to level interpolation (.True.)
 
 sw_ac(3) - shortwave single scattering albedo (constant at all layers) \
 sw_gc(3) - shortwave asymmetry factor (constant at all layers) \
@@ -118,8 +122,8 @@ You will need to clean and recompile the code if these are changed.
 
 # Personal recommendations
 
-For non-scattering problems, we generally recommend that the short characteristics method be used, as it is fast, efficient, very stable and also very accurate. This is currently what is used inside Exo-FMS for the Hot Jupiter simulations, and is even fast enough for high-resolution cases.
-For shortwave scattering problems we recommend the adding method as included (or using the two-stream Toon or DISORT methods), the adding method is generally fast and accurate (enough).
+For non-scattering problems, we generally recommend that the short characteristics method be used (either linear or Bezier interpolants), as it is fast, efficient, very stable and also very accurate. This is currently what is used inside Exo-FMS for the Hot Jupiter simulations, and is even fast enough for high spatial resolution cases.
+For shortwave scattering problems we recommend the adding method as included (or using the two-stream Toon or DISORT methods), the adding method is generally fast and accurate (enough), especially for grey opacity problems.
 For longwave scattering problems we recommend the two stream Toon scattering version.
 If that fails try the DISORT code, it is very reliable but generally slower compared to other scattering methods.
 

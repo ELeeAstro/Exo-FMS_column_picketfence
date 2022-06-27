@@ -1,6 +1,6 @@
 &FMS_RC_nml
 
-ts_scheme = 'Shortchar_Bezier'
+ts_scheme = 'Shortchar_linear'
 opac_scheme = 'Freedman'
 adj_scheme = 'Ray_dry'
 

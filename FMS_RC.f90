@@ -17,7 +17,8 @@ program Exo_FMS_RC
   use ts_Toon_mod, only : ts_Toon
   use ts_Toon_scatter_mod, only : ts_Toon_scatter
   use ts_Heng_mod, only : ts_Heng
-  use ts_short_char_mod, only : ts_short_char
+  use ts_short_char_mod_linear, only : ts_short_char_linear
+!  use ts_short_char_mod_parabolic, only : ts_short_char_parabolic
   use ts_short_char_mod_Bezier, only : ts_short_char_Bezier
   use ts_Lewis_scatter_mod, only : ts_Lewis_scatter
   use ts_disort_scatter_mod, only : ts_disort_scatter
@@ -291,10 +292,14 @@ program Exo_FMS_RC
       ! Toon method with scattering
       call ts_Toon_scatter(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z_eff, F0, Tint, AB, Beta_V, Beta_IR, &
       & sw_a, sw_g, lw_a, lw_g, 0.0_dp, 0.0_dp, net_F, olr, asr)
-    case('Shortchar')
+    case('Shortchar_linear')
       ! Short characteristics method without IR scattering
-      call ts_short_char(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z_eff, F0, Tint, AB, Beta_V, Beta_IR, &
+      call ts_short_char_linear(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z_eff, F0, Tint, AB, Beta_V, Beta_IR, &
       & sw_a, sw_g, 0.0_dp, net_F, olr, asr)
+    case('Shortchar_parabolic')
+      ! Short characteristics method without IR scattering
+      !call ts_short_char_parabolic(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z_eff, F0, Tint, AB, Beta_V, Beta_IR, &
+      !& sw_a, sw_g, 0.0_dp, net_F, olr, asr)
     case('Shortchar_Bezier')
       ! Short characteristics method without IR scattering
       call ts_short_char_Bezier(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z_eff, F0, Tint, AB, Beta_V, Beta_IR, &
