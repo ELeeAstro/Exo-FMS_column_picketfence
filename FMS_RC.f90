@@ -390,7 +390,7 @@ program Exo_FMS_RC
   end do
   close(u)
 
-  print*, nstep, 'steps took: '
+  print*, n, 'steps took: '
   print '("Time = ",f8.3," seconds.")', finish-start
 
 end program Exo_FMS_RC
