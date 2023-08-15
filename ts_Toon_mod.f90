@@ -58,7 +58,7 @@ module ts_Toon_mod
   !   & (/0.0157479145_dp, 0.0739088701_dp, 0.1463869871_dp, 0.1671746381_dp, 0.0967815902_dp/)
 
   public :: ts_Toon
-  private :: lw_grey_updown, sw_grey_updown_adding, linear_log_interp, bezier_interp
+  private :: lw_Toon, sw_adding, linear_log_interp, bezier_interp
 
 contains
 
@@ -128,7 +128,7 @@ contains
       sw_up(:) = 0.0_dp
       do b = 1, 3
         Finc_b = Finc * Beta_V(b)
-        call sw_grey_updown_adding(nlay, nlev, Finc_b, tau_Ve(:,b), mu_z(:), sw_a(:,b), sw_g(:,b), sw_a_surf, &
+        call sw_adding(nlay, nlev, Finc_b, tau_Ve(:,b), mu_z(:), sw_a(:,b), sw_g(:,b), sw_a_surf, &
           & sw_down_b(:,b), sw_up_b(:,b))
         sw_down(:) = sw_down(:) + sw_down_b(:,b)
         sw_up(:) = sw_up(:) + sw_up_b(:,b)
@@ -147,7 +147,7 @@ contains
     do b = 1, 2
       be_b(:) = be(:) * Beta_IR(b)
       be_int_b = be_int * Beta_IR(b)
-      call lw_grey_updown(nlay, nlev, be_b, be_int_b, tau_IRe(:,b), lw_up_b(:,b), lw_down_b(:,b))
+      call lw_Toon(nlay, nlev, be_b, be_int_b, tau_IRe(:,b), lw_up_b(:,b), lw_down_b(:,b))
       lw_up(:) = lw_up(:) + lw_up_b(:,b)
       lw_down(:) = lw_down(:) + lw_down_b(:,b)
     end do
@@ -168,7 +168,7 @@ contains
 
   end subroutine ts_Toon
 
-  subroutine lw_grey_updown(nlay, nlev, be, be_int, tau_IRe, lw_up, lw_down)
+  subroutine lw_Toon(nlay, nlev, be, be_int, tau_IRe, lw_up, lw_down)
     implicit none
 
     !! Input variables
@@ -238,9 +238,9 @@ contains
 
     end do
 
-  end subroutine lw_grey_updown
+  end subroutine lw_Toon
 
-  subroutine sw_grey_updown_adding(nlay, nlev, Finc, tau_Ve, mu_z, w_in, g_in, w_surf, sw_down, sw_up)
+  subroutine sw_adding(nlay, nlev, Finc, tau_Ve, mu_z, w_in, g_in, w_surf, sw_down, sw_up)
     implicit none
 
     !! Input variables
@@ -360,7 +360,7 @@ contains
     sw_down(:) = sw_down(:) * mu_z(nlev) * Finc
     sw_up(:) = sw_up(:) * mu_z(nlev) * Finc
 
-  end subroutine sw_grey_updown_adding
+  end subroutine sw_adding
 
   ! Perform linear interpolation in log10 space
   subroutine linear_log_interp(xval, x1, x2, y1, y2, yval)

@@ -32,12 +32,12 @@ module ts_VIM_mod
   real(dp), dimension(nmu), parameter :: wuarr = uarr * w
 
   public :: ts_VIM
-  private :: lw_grey_updown, sw_grey_updown_adding, linear_log_interp, bezier_interp
+  private :: lw_VIM, sw_adding, linear_log_interp, bezier_interp
 
 contains
 
   subroutine ts_VIM(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, Beta_V, Beta_IR, &
-    & sw_a, sw_g, lw_a, lw_g,  sw_a_surf, lw_a_surf, net_F, olr, asr)
+    & sw_a, sw_g, lw_a, lw_g,  sw_a_surf, net_F, olr, asr)
     implicit none
 
     !! Input variables
@@ -50,7 +50,7 @@ contains
     real(dp), dimension(nlay,3), intent(in) :: sw_a, sw_g, lw_a, lw_g
     real(dp), dimension(3), intent(in) :: Beta_V
     real(dp), dimension(2), intent(in) :: Beta_IR
-    real(dp), intent(in) :: F0, Tint, AB, sw_a_surf, lw_a_surf
+    real(dp), intent(in) :: F0, Tint, AB, sw_a_surf
 
     !! Output variables
     real(dp),  intent(out) :: olr, asr
@@ -102,7 +102,7 @@ contains
       sw_up(:) = 0.0_dp
       do b = 1, 3
         Finc_b = Finc * Beta_V(b)
-        call sw_grey_updown_adding(nlay, nlev, Finc_b, tau_Ve(:,b), mu_z(:), sw_a(:,b), sw_g(:,b), sw_a_surf, &
+        call sw_adding(nlay, nlev, Finc_b, tau_Ve(:,b), mu_z(:), sw_a(:,b), sw_g(:,b), sw_a_surf, &
           & sw_down_b(:,b), sw_up_b(:,b))
         sw_down(:) = sw_down(:) + sw_down_b(:,b)
         sw_up(:) = sw_up(:) + sw_up_b(:,b)
@@ -112,22 +112,21 @@ contains
       sw_up(:) = 0.0_dp
     end if
 
-    !! Longwave two-stream flux calculation
-    be(:) = (sb * Te(:)**4)/pi  ! Integrated planck function intensity at levels
-    be_int = (sb * Tint**4)/pi ! Integrated planck function intensity for internal temperature
 
     !! Longwave two-stream flux calculation
     be(:) = (sb * Te(:)**4)/pi  ! Integrated planck function intensity at levels
     be_int = (sb * Tint**4)/pi ! Integrated planck function intensity for internal temperature
+
     lw_up(:) = 0.0_dp
     lw_down(:) = 0.0_dp
     do b = 1, 2
       be_b(:) = be(:) * Beta_IR(b)
       be_int_b = be_int * Beta_IR(b)
-      call lw_grey_updown(nlay, nlev, be_b, be_int_b, tau_IRe(:,b), lw_a(:,b), lw_g(:,b), lw_up_b(:,b), lw_down_b(:,b))
+      call lw_VIM(nlay, nlev, be_b, be_int_b, tau_IRe(:,b), lw_a(:,b), lw_g(:,b), lw_up_b(:,b), lw_down_b(:,b))
       lw_up(:) = lw_up(:) + lw_up_b(:,b)
       lw_down(:) = lw_down(:) + lw_down_b(:,b)
     end do
+
     !! Net fluxes at each level
     lw_net(:) = lw_up(:) - lw_down(:)
     sw_net(:) = sw_up(:) - sw_down(:)
@@ -141,7 +140,7 @@ contains
 
   end subroutine ts_VIM
 
-  subroutine lw_grey_updown(nlay, nlev, be, be_int, tau_IRe, ww, gg, lw_up, lw_down)
+  subroutine lw_VIM(nlay, nlev, be, be_int, tau_IRe, ww, gg, lw_up, lw_down)
     implicit none
 
     !! Input variables
@@ -168,7 +167,7 @@ contains
     !! Calculate dtau in each layer
     dtau(:) = tau_IRe(2:) - tau_IRe(1:nlay)
 
-    ! Delta eddington scaling
+    !! Delta eddington scaling
     w0(:) = (1.0_dp - gg(:)**2)*ww(:)/(1.0_dp-ww(:)*gg(:)**2)
     dtau(:) = (1.0_dp-ww(:)*gg(:)**2)*dtau(:)
     hg(:) = gg(:)/(1.0_dp + gg(:))
@@ -186,6 +185,7 @@ contains
 
     !! modified co-albedo epsilon
     epsg(:) = sqrt((1.0_dp - w0(:))*(1.0_dp - hg(:)*w0(:)))
+    !! co-albedo
     eps(:) = 1.0_dp - w0(:)
 
     !! Absorption/modified optical depth for transmission function
@@ -235,7 +235,7 @@ contains
     !! Find Sp and Sm - it's now best to put mu into the inner loop
     ! Sp and Sm defined at lower level edges, zero upper boundary condition
     do k = 1, nlay
-      if (w0(k) <= 1.0e-6_dp) then
+      if (w0(k) <= 1.0e-3_dp) then
          Sp(:,:,k) = 0.0_dp
          Sm(:,:,k) = 0.0_dp
         cycle
@@ -334,9 +334,9 @@ contains
     lw_down(:) = twopi * lw_down(:)
     lw_up(:) = twopi * lw_up(:)
 
-  end subroutine lw_grey_updown
+  end subroutine lw_VIM
 
- subroutine sw_grey_updown_adding(nlay, nlev, Finc, tau_Ve, mu_z, w_in, g_in, w_surf, sw_down, sw_up)
+ subroutine sw_adding(nlay, nlev, Finc, tau_Ve, mu_z, w_in, g_in, w_surf, sw_down, sw_up)
     implicit none
 
     !! Input variables
@@ -368,7 +368,7 @@ contains
     g(nlev) = 0.0_dp
 
     ! If zero albedo across all atmospheric layers then return direct beam only
-    if (all(om(:) <= 1.0e-12_dp)) then
+    if (all(om(:) <= 1.0e-3_dp)) then
 
       if (mu_z(nlev) == mu_z(1)) then
         ! No zenith correction, use regular method
@@ -456,7 +456,7 @@ contains
     sw_down(:) = sw_down(:) * mu_z(nlev) * Finc
     sw_up(:) = sw_up(:) * mu_z(nlev) * Finc
 
-  end subroutine sw_grey_updown_adding
+  end subroutine sw_adding
 
   ! Perform linear interpolation in log10 space
   subroutine linear_log_interp(xval, x1, x2, y1, y2, yval)

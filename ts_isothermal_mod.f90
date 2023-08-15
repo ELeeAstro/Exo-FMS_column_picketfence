@@ -21,7 +21,7 @@ module ts_isothermal_mod
   real(dp), parameter :: D = 1.66_dp  ! Diffusivity factor
 
   public :: ts_isothermal
-  private :: lw_grey_updown, sw_grey_updown_adding
+  private :: lw_iso, sw_adding
 
 contains
 
@@ -59,7 +59,7 @@ contains
       sw_up(:) = 0.0_dp
       do b = 1, 3
         Finc_b = Finc * Beta_V(b)
-        call sw_grey_updown_adding(nlay, nlev, Finc_b, tau_Ve(:,b), mu_z, sw_a(:,b), sw_g(:,b), sw_a_surf, &
+        call sw_adding(nlay, nlev, Finc_b, tau_Ve(:,b), mu_z, sw_a(:,b), sw_g(:,b), sw_a_surf, &
         & sw_down_b(:,b), sw_up_b(:,b))
         sw_down(:) = sw_down(:) + sw_down_b(:,b)
         sw_up(:) = sw_up(:) + sw_up_b(:,b)
@@ -77,7 +77,7 @@ contains
     do b = 1, 2
       bl_b(:) = bl(:) * Beta_IR(b)
       be_int_b = be_int * Beta_IR(b)
-      call lw_grey_updown(nlay, nlev, bl, be_int_b, tau_IRe(:,b), lw_up_b(:,b), lw_down_b(:,b))
+      call lw_iso(nlay, nlev, bl, be_int_b, tau_IRe(:,b), lw_up_b(:,b), lw_down_b(:,b))
       lw_up(:) = lw_up(:) + lw_up_b(:,b)
       lw_down(:) = lw_down(:) + lw_down_b(:,b)
     end do
@@ -95,7 +95,7 @@ contains
 
   end subroutine ts_isothermal
 
-  subroutine lw_grey_updown(nlay, nlev, bl, be_int, tau_IRe, lw_up, lw_down)
+  subroutine lw_iso(nlay, nlev, bl, be_int, tau_IRe, lw_up, lw_down)
     implicit none
 
     !! Input variables
@@ -133,9 +133,9 @@ contains
     end do
 
 
-  end subroutine lw_grey_updown
+  end subroutine lw_iso
 
-  subroutine sw_grey_updown_adding(nlay, nlev, Finc, tau_Ve, mu_z, w_in, g_in, w_surf, sw_down, sw_up)
+  subroutine sw_adding(nlay, nlev, Finc, tau_Ve, mu_z, w_in, g_in, w_surf, sw_down, sw_up)
     implicit none
 
     !! Input variables
@@ -238,6 +238,6 @@ contains
     sw_down(:) = sw_down(:) * mu_z * Finc
     sw_up(:) = sw_up(:) * mu_z * Finc
 
-  end subroutine sw_grey_updown_adding
+  end subroutine sw_adding
 
 end module ts_isothermal_mod

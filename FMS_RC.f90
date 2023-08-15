@@ -300,14 +300,15 @@ program Exo_FMS_RC
       do b = 1, 2
         tau_IRl(:,b) = (tau_IRe(1:nlay,b) + tau_IRe(2:nlev,b)) / 2.0_dp
       end do
-      call ts_Heng(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, tau_IRl, mu_z, F0, Tint, AB, Beta_V, Beta_IR, net_F, olr)
+      call ts_Heng(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, tau_IRl, mu_z_eff, F0, Tint, AB, Beta_V, Beta_IR, &
+      & sw_a, sw_g, 0.0_dp, net_F, olr, asr)
     case('Disort_scatter')
       call ts_disort_scatter(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB,  Beta_V, Beta_IR, &
       & sw_a, sw_g, lw_a, lw_g, net_F, olr, asr)
     case('VIM')
       ! Variational Iteration Method with analytical LW scattering
       call ts_VIM(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z_eff, F0, Tint, AB, Beta_V, Beta_IR, &
-      & sw_a, sw_g, lw_a, lw_g, 0.0_dp, 0.0_dp, net_F, olr, asr)      
+      & sw_a, sw_g, lw_a, lw_g, 0.0_dp, net_F, olr, asr)      
     case('None')
     case default
       print*, 'Invalid ts_scheme: ', trim(ts_scheme)
