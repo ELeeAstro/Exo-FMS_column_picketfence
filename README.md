@@ -5,16 +5,20 @@ Major Update History:
  - Dec 2021 - major overhaul
  - May 2022 - SW zenith angle geometric correction added (not ready for all modes yet)
  - Jun 2022 - Bezier short char added
+ - Aug 2023 - VIM added - removed some methods + refactored arrays - much more stable
 
-Elspeth KH Lee - Dec 2021
+Elspeth K.H. Lee - Aug 2023
 
 This is one part of a series of codes that build upon different two-stream approaches and schemes, primarily useful for the GCM modelling community.
 This is the non-grey, picket fence version, with three bands in the visible, representing incident radiation from a host star, and two bands in the IR, representing the internal radiation propagating inside the planetary atmosphere.
+This is for gas giant planets only with a defined internal temperature, a solid/liquid surface RT is not included here (but could be added easily if needed for special cases).
+
+Here we colloquially use "two-stream" as the general methodology, making specific wether a particular method uses two-stream or four-stream (or n-stream) for it's calculations.
 
 Some useful references useful for non-grey, picket fence modelling are: \
 Chandrasekhar (1935) \
 Parmentier & Guillot (2014) \
-Parmentier et al.  2015) \
+Parmentier et al.  (2015) \
 Lee et al. (2021)
 
 The non-grey, picket fence scheme builds upon the semi-grey scheme, by having 3 bands in the visible, and 2 bands in the IR.
@@ -34,22 +38,21 @@ Some compiler options for gfortran, nvfortran and ifort are provided in the make
 
 This code performs various two-stream approaches from the literature in a non-grey, picket fence context:
 1. Isothermal layer approximation
-2. Toon et al. method (w. scattering w.o. scattering versions)
-3. Short Characteristics method (linear, quadratic or Bezier interpolant versions)
-4. Heng et al. method (Improved TS method in dev.)
-5. Neil Lewis's scattering code, following Pierrehumbert (2010)
-6. Mendonca et al. methods
-7. Two-stream DISORT version (w. modifications by Xianyu Tan)
+2. Toon method (with scattering and without scattering versions)
+3. Short Characteristics method (linear or Bezier interpolant versions)
+4. Heng et al. method (Improved Heng TS method in development)
+5. Two-stream DISORT version (with T_int modifications by Xianyu Tan)
+6. Variational Iteration Method (VIM) with analytical LW scattering
 
 You can also see the header comments in the source code for some additional information.
 
 For the shortwave fluxes, for methods that do not contain a shortwave scattering mode we include the 'adding method' (Mendonca et al. 2015 + references).
-We detect if any albedo is present in the column, and perform the adding method to calculate the scattered flux, otherwise if there is no albedo only the direct beam is used.
+We detect if any albedo is present in the column, and perform the adding method to calculate the scattered flux, otherwise if there is zero albedo only the direct beam is used.
 
 This emulates a single column inside the Exo-FMS GCM and is useful for testing and developing new techniques
 as they would perform inside a GCM setting. This is also useful to see differences in each method and their various approximations.
 
-We also include a dry convective adjustment schemes, currently only 'Ray_adj', based on Raymond Pierrehumbert's python code.
+We also include dry convective adjustment schemes, currently only 'Ray_adj', based on Raymond Pierrehumbert's python code.
 
 # Namelist options
 
@@ -58,15 +61,13 @@ In the file 'FMS_RC.nml' you can select different options that control the simul
 ts_scheme: \
 'Isothermal' - Isothermal ts method \
 'Isothermal_2' - Isothermal ts method - high optical depth version \
-'Toon' - Toon et al. ts method \
-'Toon_scatter' - Toon et al. ts method with scattering \
-'Shortchar_linear' - Short characteristics method with linear interpolants \
-'Shortchar_parabolic' - Short characteristics method with parabolic interpolants \
-'Shortchar_Bezier' - Short characteristics method with Bezier interpolants \
+'Toon' - Toon et al. method - four stream \
+'Toon_scatter' - Toon et al. ts method with scattering - four stream \
+'Shortchar_linear' - Short characteristics method with linear interpolants - four stream \
+'Shortchar_Bezier' - Short characteristics method with Bezier interpolants - four stream  \
 'Heng' - Heng et al. method \
-'Lewis_scatter' - Neil Lewis's scattering code, following Pierrehumbert (2010) \
-'Mendonca' - Mendonca et al. method \
 'Disort_scatter' - two-stream DISORT version with scattering
+'VIM' - Variational Iteration Method (VIM) - four stream
 
 opac_scheme: \
 'Freedman' - Uses the Rosseland mean fitting function from Freedman et al. (2014) \
@@ -118,17 +119,19 @@ A python plotting routine, 'plot_TP.py' is provided to plot the results of the s
 # Gaussian Ordinance values
 
 In methods that use Gaussian quadrature to perform the mu integration in intensity (to calculate the flux), various values and weights can be changed for testing at the top of the two-stream modules.
+You can use these to switch between two-stream, four-stream etc etc
 You will need to clean and recompile the code if these are changed.
 
 # Personal recommendations
 
-For non-scattering problems, we generally recommend that the short characteristics method be used (either linear or Bezier interpolants), as it is fast, efficient, very stable and also very accurate. This is currently what is used inside Exo-FMS for the Hot Jupiter simulations, and is even fast enough for high spatial resolution cases.
-For shortwave scattering problems we recommend the adding method as included (or using the two-stream Toon or DISORT methods), the adding method is generally fast and accurate (enough), especially for grey opacity problems.
-For longwave scattering problems we recommend the two stream Toon scattering version.
-If that fails try the DISORT code, it is very reliable but generally slower compared to other scattering methods.
+For non-scattering problems, we generally recommend that the short characteristics method be used with linear, as it is fast, efficient, very stable and also very accurate. This is currently what is used inside Exo-FMS for the Hot Jupiter simulations, and is even fast enough for high spatial resolution cases.
+For shortwave scattering problems we recommend the adding method as included (or using the four-stream Toon or two-stream DISORT methods), the adding method is generally fast and accurate (enough), especially for grey opacity problems.
+For longwave scattering problems we recommend the VIM code, as a fast but accurate method due to it's analytical properties.
+If that fails try the Toon_scattering or DISORT code, they are generally reliable but slower compared to other scattering methods.
 
 # Future developments
 
-We will include versions that include IR multiple-scattering in the future. \
 Additional opacity schemes from the literature can be added. \
-Interpolating directly from the Freedman et al. (2014) tables rather than using the fitting function.
+Interpolating directly from the Freedman et al. (2014) tables rather than using the fitting function. \
+Adding analytical four stream shortwave methods \
+Adding more analytical longwave scattering methods

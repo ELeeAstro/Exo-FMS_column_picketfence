@@ -1,10 +1,10 @@
 !!!
 ! Elspeth KH Lee - Aug 2023 : Initial version
 ! sw: Adding layer method with scattering
-! lw: Variational Iteration Method - Follows Zhang et al. (2017)
-!     Uses AA as an intial guess, then applies VIM to calculate the scattering component
+! lw: Variational Iteration Method (VIM) - Follows Zhang et al. (2017)
+!     Uses AA as an intial guess (zeroth order), then applies VIM to calculate the scattering component (1st order)
 ! Pros: Very fast method with LW scattering approximation, no matrix inversions - better than AA alone
-! Cons: Still an approximation (though quite good for a non-matrix method)
+! Cons: Still an approximation, (though quite great for a non-matrix method), technically not multiple scattering
 !!!
 
 module ts_VIM_mod
@@ -19,12 +19,13 @@ module ts_VIM_mod
   real(dp), parameter :: twopi = 2.0_dp * pi
   real(dp), parameter :: sb = 5.670374419e-8_dp
 
-  !! Legendre quadrature for 1 nodes
+  !! Legendre quadrature for 1 node (two-stream)
   ! integer, parameter :: nmu = 1
-  ! real(dp), dimension(nmu), parameter :: uarr = (/1.0_dp/1.6487213_dp/)
+  ! real(dp), dimension(nmu), parameter :: uarr = (/1.0_dp/1.6487213_dp/) ! or use 1.0/1.66
   ! real(dp), dimension(nmu), parameter :: w = (/1.0_dp/)
   ! real(dp), dimension(nmu), parameter :: wuarr = uarr * w
 
+  !! Legendre quadrature for 2 nodes (four-stream)
   integer, parameter :: nmu = 2
   real(dp), dimension(nmu), parameter :: uarr = (/0.21132487_dp, 0.78867513_dp/)
   real(dp), dimension(nmu), parameter :: w = (/0.5_dp, 0.5_dp/)
