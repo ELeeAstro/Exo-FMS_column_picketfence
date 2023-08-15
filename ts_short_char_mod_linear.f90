@@ -71,9 +71,9 @@ contains
     integer, intent(in) :: nlay, nlev
     real(dp), dimension(nlay), intent(in) :: Tl, pl
     real(dp), dimension(nlev), intent(in) :: pe, mu_z
-    real(dp), dimension(3,nlev), intent(in) :: tau_Ve
-    real(dp), dimension(2,nlev), intent(in) :: tau_IRe
-    real(dp), dimension(3,nlay), intent(in) :: sw_a, sw_g
+    real(dp), dimension(nlev,3), intent(in) :: tau_Ve
+    real(dp), dimension(nlev,2), intent(in) :: tau_IRe
+    real(dp), dimension(nlay,3), intent(in) :: sw_a, sw_g
     real(dp), dimension(3), intent(in) :: Beta_V
     real(dp), dimension(2), intent(in) :: Beta_IR
     real(dp), intent(in) :: F0, Tint, AB, sw_a_surf
@@ -89,8 +89,8 @@ contains
     real(dp), dimension(nlay) :: lTl, lpl
     real(dp), dimension(nlev) :: Te, be, be_b
     real(dp), dimension(nlev) :: sw_down, sw_up, lw_down, lw_up
-    real(dp), dimension(3,nlev) :: sw_down_b, sw_up_b
-    real(dp), dimension(2,nlev) :: lw_down_b, lw_up_b
+    real(dp), dimension(nlev,3) :: sw_down_b, sw_up_b
+    real(dp), dimension(nlev,2) :: lw_down_b, lw_up_b
     real(dp), dimension(nlev) :: lw_net, sw_net
 
     !! Find temperature at layer edges through interpolation and extrapolation
@@ -128,10 +128,10 @@ contains
       sw_up(:) = 0.0_dp
       do b = 1, 3
         Finc_b = Finc * Beta_V(b)
-        call sw_grey_updown_adding(nlay, nlev, Finc_b, tau_Ve(b,:), mu_z(:), sw_a(b,:), sw_g(b,:), sw_a_surf, &
-        & sw_down_b(b,:), sw_up_b(b,:))
-        sw_down(:) = sw_down(:) + sw_down_b(b,:)
-        sw_up(:) = sw_up(:) + sw_up_b(b,:)
+        call sw_grey_updown_adding(nlay, nlev, Finc_b, tau_Ve(:,b), mu_z(:), sw_a(:,b), sw_g(:,b), sw_a_surf, &
+          & sw_down_b(:,b), sw_up_b(:,b))
+        sw_down(:) = sw_down(:) + sw_down_b(:,b)
+        sw_up(:) = sw_up(:) + sw_up_b(:,b)
       end do
     else
       sw_down(:) = 0.0_dp
@@ -146,9 +146,9 @@ contains
     do b = 1, 2
       be_b(:) = be(:) * Beta_IR(b)
       be_int_b = be_int * Beta_IR(b)
-      call lw_grey_updown_linear(nlay, nlev, be_b, be_int_b, tau_IRe(b,:), lw_up_b(b,:), lw_down_b(b,:))
-      lw_up(:) = lw_up(:) + lw_up_b(b,:)
-      lw_down(:) = lw_down(:) + lw_down_b(b,:)
+      call lw_grey_updown_linear(nlay, nlev, be_b, be_int_b, tau_IRe(:,b), lw_up_b(:,b), lw_down_b(:,b))
+      lw_up(:) = lw_up(:) + lw_up_b(:,b)
+      lw_down(:) = lw_down(:) + lw_down_b(:,b)
     end do
 
     !! Net fluxes at each level
@@ -257,25 +257,25 @@ contains
 
     !! Work variables
     integer :: k
-    real(dp) :: lamtau, e_lamtau, lim, arg, apg, amg
-    real(dp), dimension(nlev) ::  w, g, f
+    real(dp) :: lamtau, e_lamtau, arg, apg, amg
+    real(dp), dimension(nlev) ::  om, g, f
     real(dp), dimension(nlev) :: tau_Ve_s
     real(dp), dimension(nlay) :: tau
-    real(dp), dimension(nlev) :: tau_s, w_s, f_s, g_s
+    real(dp), dimension(nlev) :: tau_s, w_s, g_s
     real(dp), dimension(nlev) :: lam, u, N, gam, alp
     real(dp), dimension(nlev) :: R_b, T_b, R, T
     real(dp), dimension(nlev) :: Tf
     real(dp), dimension(nlev) :: cum_trans
 
     ! Design w and g to include surface property level
-    w(1:nlay) = w_in(:)
+    om(1:nlay) = w_in(:)
     g(1:nlay) = g_in(:)
 
-    w(nlev) = 0.0_dp
+    om(nlev) = 0.0_dp
     g(nlev) = 0.0_dp
 
     ! If zero albedo across all atmospheric layers then return direct beam only
-    if (all(w(:) <= 1.0e-12_dp)) then
+    if (all(om(:) <= 1.0e-12_dp)) then
 
       if (mu_z(nlev) == mu_z(1)) then
         ! No zenith correction, use regular method
@@ -298,7 +298,7 @@ contains
 
     end if
 
-    w(nlev) = w_surf
+    om(nlev) = w_surf
     g(nlev) = 0.0_dp
 
     ! Backscattering approximation
@@ -308,13 +308,13 @@ contains
     tau_Ve_s(1) = tau_Ve(1)
     do k = 1, nlay
       tau(k) = tau_Ve(k+1) - tau_Ve(k)
-      tau_s(k) = tau(k) * (1.0_dp - w(k)*f(k))
+      tau_s(k) = tau(k) * (1.0_dp - om(k)*f(k))
       tau_Ve_s(k+1) = tau_Ve_s(k) + tau_s(k)
     end do
 
     do k = 1, nlev
 
-      w_s(k) = w(k) * ((1.0_dp - f(k))/(1.0_dp - w(k)*f(k)))
+      w_s(k) = om(k) * ((1.0_dp - f(k))/(1.0_dp - om(k)*f(k)))
       g_s(k) = (g(k) - f(k))/(1.0_dp - f(k))
       lam(k) = sqrt(3.0_dp*(1.0_dp - w_s(k))*(1.0_dp - w_s(k)*g_s(k)))
       gam(k) = 0.5_dp * w_s(k) * (1.0_dp + 3.0_dp*g_s(k)*(1.0_dp - w_s(k))*mu_z(k)**2)/(1.0_dp - lam(k)**2*mu_z(k)**2)
@@ -370,7 +370,7 @@ contains
     implicit none
 
     real(dp), intent(in) :: xval, y1, y2, x1, x2
-    real(dp) :: lxval, ly1, ly2, lx1, lx2
+    real(dp) :: ly1, ly2
     real(dp), intent(out) :: yval
     real(dp) :: norm
 
@@ -390,7 +390,7 @@ contains
     real(dp), intent(in) :: x
     real(dp), intent(out) :: y
 
-    real(dp) :: xc, dx, dx1, dy, dy1, w, yc, t, wlim, wlim1
+    real(dp) :: dx, dx1, dy, dy1, wh, yc, t, wlim, wlim1
 
     !xc = (xi(1) + xi(2))/2.0_dp ! Control point (no needed here, implicitly included)
     dx = xi(2) - xi(1)
@@ -401,25 +401,25 @@ contains
     if (x > xi(1) .and. x < xi(2)) then
       ! left hand side interpolation
       !print*,'left'
-      w = dx1/(dx + dx1)
+      wh = dx1/(dx + dx1)
       wlim = 1.0_dp + 1.0_dp/(1.0_dp - (dy1/dy) * (dx/dx1))
       wlim1 = 1.0_dp/(1.0_dp - (dy/dy1) * (dx1/dx))
-      if (w <= min(wlim,wlim1) .or. w >= max(wlim,wlim1)) then
-        w = 1.0_dp
+      if (wh <= min(wlim,wlim1) .or. wh >= max(wlim,wlim1)) then
+        wh = 1.0_dp
       end if
-      yc = yi(2) - dx/2.0_dp * (w*dy/dx + (1.0_dp - w)*dy1/dx1)
+      yc = yi(2) - dx/2.0_dp * (wh*dy/dx + (1.0_dp - wh)*dy1/dx1)
       t = (x - xi(1))/dx
       y = (1.0_dp - t)**2 * yi(1) + 2.0_dp*t*(1.0_dp - t)*yc + t**2*yi(2)
     else ! (x > xi(2) and x < xi(3)) then
       ! right hand side interpolation
       !print*,'right'
-      w = dx/(dx + dx1)
+      wh = dx/(dx + dx1)
       wlim = 1.0_dp/(1.0_dp - (dy1/dy) * (dx/dx1))
       wlim1 = 1.0_dp + 1.0_dp/(1.0_dp - (dy/dy1) * (dx1/dx))
-      if (w <= min(wlim,wlim1) .or. w >= max(wlim,wlim1)) then
-        w = 1.0_dp
+      if (wh <= min(wlim,wlim1) .or. wh >= max(wlim,wlim1)) then
+        wh = 1.0_dp
       end if
-      yc = yi(2) + dx1/2.0_dp * (w*dy1/dx1 + (1.0_dp - w)*dy/dx)
+      yc = yi(2) + dx1/2.0_dp * (wh*dy1/dx1 + (1.0_dp - wh)*dy/dx)
       t = (x - xi(2))/(dx1)
       y = (1.0_dp - t)**2 * yi(2) + 2.0_dp*t*(1.0_dp - t)*yc + t**2*yi(3)
     end if

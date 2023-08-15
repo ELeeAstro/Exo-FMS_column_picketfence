@@ -18,11 +18,9 @@ program Exo_FMS_RC
   use ts_Toon_scatter_mod, only : ts_Toon_scatter
   use ts_Heng_mod, only : ts_Heng
   use ts_short_char_mod_linear, only : ts_short_char_linear
-!  use ts_short_char_mod_parabolic, only : ts_short_char_parabolic
   use ts_short_char_mod_Bezier, only : ts_short_char_Bezier
-  use ts_Lewis_scatter_mod, only : ts_Lewis_scatter
   use ts_disort_scatter_mod, only : ts_disort_scatter
-  use ts_Mendonca_mod, only : ts_Mendonca
+  use ts_VIM_mod, only : ts_VIM
   use k_Rosseland_mod, only : k_Ross_Freedman, k_Ross_Valencia, gam_Parmentier, Bond_Parmentier
   use IC_mod, only : IC_profile
   use dry_conv_adj_mod, only : Ray_dry_adj
@@ -117,20 +115,20 @@ program Exo_FMS_RC
 
   !! Allocate other arrays we need
   allocate(Tl(nlay), dT_rad(nlay), dT_conv(nlay), net_F(nlev))
-  allocate(tau_Ve(3,nlev),tau_IRe(2,nlev), k_Vl(3,nlay), k_IRl(2,nlay))
+  allocate(tau_Ve(nlev,3),tau_IRe(nlev,2), k_Vl(nlay,3), k_IRl(nlay,2))
   allocate(Beta_V(3), Beta_IR(2), gam_V(3))
   allocate(alt(nlev), mu_z_eff(nlev), alp(nlev))
 
   if (ts_scheme == 'Heng') then
-    allocate(tau_IRl(2,nlay))
+    allocate(tau_IRl(nlay,2))
   end if
 
   ! Allocate cloud properties (constant all layers for now)
-  allocate(sw_a(3,nlay), sw_g(3,nlay), lw_a(2,nlay), lw_g(2,nlay))
-  sw_a(1,:) = sw_ac(1) ; sw_a(2,:) = sw_ac(2) ; sw_a(3,:) = sw_ac(3)
-  sw_g(1,:) = sw_gc(1) ; sw_g(2,:) = sw_gc(2) ; sw_g(3,:) = sw_gc(3)
-  lw_a(1,:) = lw_ac(1) ; lw_a(2,:) = lw_ac(2)
-  lw_g(1,:) = lw_gc(1) ; lw_g(2,:) = lw_gc(2)
+  allocate(sw_a(nlay,3), sw_g(nlay,3), lw_a(nlay,2), lw_g(nlay,2))
+  sw_a(:,1) = sw_ac(1) ; sw_a(:,2) = sw_ac(2) ; sw_a(:,3) = sw_ac(3)
+  sw_g(:,1) = sw_gc(1) ; sw_g(:,2) = sw_gc(2) ; sw_g(:,3) = sw_gc(3)
+  lw_a(:,1) = lw_ac(1) ; lw_a(:,2) = lw_ac(2)
+  lw_g(:,1) = lw_gc(1) ; lw_g(:,2) = lw_gc(2)
 
   !! Calculate the adiabatic coefficent
   kappa_air = Rd_air/cp_air   ! kappa = Rd/cp
@@ -143,11 +141,11 @@ program Exo_FMS_RC
   print*, '--------------'
 
   ! Semi-grey atmosphere values (here they are not used, but just need to be passed to IC routine)
-  k_Vl(1,:) = k_V
-  k_IRl(1,:) = k_IR
+  k_Vl(:,1) = k_V
+  k_IRl(:,1) = k_IR
 
   !! Initial condition T-p profile - see the routine for options
-  call IC_profile(iIC,corr,nlay,pref,pl,k_Vl(1,:),k_IRl(1,:),Tint,mu_z,Tirr,grav,fl,Tl,prc,table_num,met)
+  call IC_profile(iIC,corr,nlay,pref,pl,k_Vl(:,1),k_IRl(:,1),Tint,mu_z,Tirr,grav,fl,Tl,prc,table_num,met)
 
   !! Parmentier opacity profile parameters - first get Bond albedo
   Teff = (Tint**4 + (1.0_dp/sqrt(3.0_dp)) * Tirr**4)**(0.25_dp)
@@ -196,21 +194,21 @@ program Exo_FMS_RC
 
       ! Include optical depth component from 0 pressure, assuming constant T and p at boundary
       call k_Ross_Freedman(Tl(1), pe(1), met, k_IRl(1,1))
-      k_Vl(:,1) = k_IRl(1,1) * gam_V(:)
-      k_IRl(2,1) = k_IRl(1,1) * gam_2
+      k_Vl(1,:) = k_IRl(1,1) * gam_V(:)
+      k_IRl(1,2) = k_IRl(1,1) * gam_2
       k_IRl(1,1) = k_IRl(1,1) * gam_1
 
-      tau_Ve(:,1) = (k_Vl(:,1) * pe(1)) / grav
-      tau_IRe(:,1) = (k_IRl(:,1) * pe(1)) / grav
+      tau_Ve(1,:) = (k_Vl(1,:) * pe(1)) / grav
+      tau_IRe(1,:) = (k_IRl(1,:) * pe(1)) / grav
 
       do k = 1, nlay
-        call k_Ross_Freedman(Tl(k), pl(k), met, k_IRl(1,k))
-        k_Vl(:,k) = k_IRl(1,k) * gam_V(:)
-        k_IRl(2,k) = k_IRl(1,k) * gam_2
-        k_IRl(1,k) = k_IRl(1,k) * gam_1
+        call k_Ross_Freedman(Tl(k), pl(k), met, k_IRl(k,1))
+        k_Vl(k,:) = k_IRl(k,1) * gam_V(:)
+        k_IRl(k,2) = k_IRl(k,1) * gam_2
+        k_IRl(k,1) = k_IRl(k,1) * gam_1
 
-        tau_Ve(:,k+1) = tau_Ve(:,k) + (k_Vl(:,k) * dpe(k)) / grav
-        tau_IRe(:,k+1) = tau_IRe(:,k) + (k_IRl(:,k) * dpe(k)) / grav
+        tau_Ve(k+1,:) = tau_Ve(k,:) + (k_Vl(k,:) * dpe(k)) / grav
+        tau_IRe(k+1,:) = tau_IRe(k,:) + (k_IRl(k,:) * dpe(k)) / grav
       end do
 
     case('Valencia')
@@ -218,21 +216,21 @@ program Exo_FMS_RC
 
       ! Include optical depth component from 0 pressure, assuming constant T and p at boundary
       call k_Ross_Valencia(Tl(1), pe(1), met, k_IRl(1,1))
-      k_Vl(:,1) = k_IRl(1,1) * gam_V(:)
-      k_IRl(2,1) = k_IRl(1,1) * gam_2
+      k_Vl(1,:) = k_IRl(1,1) * gam_V(:)
+      k_IRl(1,2) = k_IRl(1,1) * gam_2
       k_IRl(1,1) = k_IRl(1,1) * gam_1
 
-      tau_Ve(:,1) = (k_Vl(:,1) * pe(1)) / grav
-      tau_IRe(:,1) = (k_IRl(:,1) * pe(1)) / grav
+      tau_Ve(1,:) = (k_Vl(1,:) * pe(1)) / grav
+      tau_IRe(1,:) = (k_IRl(1,:) * pe(1)) / grav
 
       do k = 1, nlay
-        call k_Ross_Valencia(Tl(k), pl(k), met, k_IRl(1,k))
-        k_Vl(:,k) = k_IRl(1,k) * gam_V(:)
-        k_IRl(2,k) = k_IRl(1,k) * gam_2
-        k_IRl(1,k) = k_IRl(1,k) * gam_1
+        call k_Ross_Valencia(Tl(k), pl(k), met, k_IRl(k,1))
+        k_Vl(k,:) = k_IRl(k,1) * gam_V(:)
+        k_IRl(k,2) = k_IRl(k,1) * gam_2
+        k_IRl(k,1) = k_IRl(k,1) * gam_1
 
-        tau_Ve(:,k+1) = tau_Ve(:,k) + (k_Vl(:,k) * dpe(k)) / grav
-        tau_IRe(:,k+1) = tau_IRe(:,k) + (k_IRl(:,k) * dpe(k)) / grav
+        tau_Ve(k+1,:) = tau_Ve(k,:) + (k_Vl(k,:) * dpe(k)) / grav
+        tau_IRe(k+1,:) = tau_IRe(k,:) + (k_IRl(k,:) * dpe(k)) / grav
       end do
 
     case default
@@ -271,9 +269,6 @@ program Exo_FMS_RC
       mu_z_eff(:) = mu_z
     end if
 
-
-
-
     !! Two stream radiative transfer step
     select case(ts_scheme)
     case('Isothermal')
@@ -288,7 +283,7 @@ program Exo_FMS_RC
       ! Toon method without IR scattering
       call ts_Toon(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z_eff, F0, Tint, AB, Beta_V, Beta_IR, &
       & sw_a, sw_g, 0.0_dp, net_F, olr, asr)
-    case("Toon_scatter")
+    case('Toon_scatter')
       ! Toon method with scattering
       call ts_Toon_scatter(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z_eff, F0, Tint, AB, Beta_V, Beta_IR, &
       & sw_a, sw_g, lw_a, lw_g, 0.0_dp, 0.0_dp, net_F, olr, asr)
@@ -296,10 +291,6 @@ program Exo_FMS_RC
       ! Short characteristics method without IR scattering
       call ts_short_char_linear(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z_eff, F0, Tint, AB, Beta_V, Beta_IR, &
       & sw_a, sw_g, 0.0_dp, net_F, olr, asr)
-    case('Shortchar_parabolic')
-      ! Short characteristics method without IR scattering
-      !call ts_short_char_parabolic(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z_eff, F0, Tint, AB, Beta_V, Beta_IR, &
-      !& sw_a, sw_g, 0.0_dp, net_F, olr, asr)
     case('Shortchar_Bezier')
       ! Short characteristics method without IR scattering
       call ts_short_char_Bezier(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z_eff, F0, Tint, AB, Beta_V, Beta_IR, &
@@ -307,20 +298,16 @@ program Exo_FMS_RC
     case('Heng')
       ! Heng flux method without IR scattering
       do b = 1, 2
-        tau_IRl(b,:) = (tau_IRe(b,1:nlay) + tau_IRe(b,2:nlev)) / 2.0_dp
+        tau_IRl(:,b) = (tau_IRe(1:nlay,b) + tau_IRe(2:nlev,b)) / 2.0_dp
       end do
       call ts_Heng(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, tau_IRl, mu_z, F0, Tint, AB, Beta_V, Beta_IR, net_F, olr)
-    case('Lewis_scatter')
-      ! Neil Lewis's code with scattering
-      call ts_Lewis_scatter(nlay, nlev, Tl, tau_Ve, tau_IRe, mu_z, F0, Tint, AB,  Beta_V, Beta_IR, &
-      & sw_a, sw_g, lw_a, lw_g, net_F, olr, asr)
     case('Disort_scatter')
       call ts_disort_scatter(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB,  Beta_V, Beta_IR, &
       & sw_a, sw_g, lw_a, lw_g, net_F, olr, asr)
-    case('Mendonca')
-      ! Mendonca method without IR scattering
-      call ts_Mendonca(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z_eff, F0, Tint, AB, Beta_V, Beta_IR, &
-      & sw_a, sw_g, 0.0_dp, net_F, olr, asr)
+    case('VIM')
+      ! Variational Iteration Method with analytical LW scattering
+      call ts_VIM(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z_eff, F0, Tint, AB, Beta_V, Beta_IR, &
+      & sw_a, sw_g, lw_a, lw_g, 0.0_dp, 0.0_dp, net_F, olr, asr)      
     case('None')
     case default
       print*, 'Invalid ts_scheme: ', trim(ts_scheme)
@@ -385,8 +372,8 @@ program Exo_FMS_RC
   print*, 'Outputting results: '
   open(newunit=u,file='FMS_RC_pp.out', action='readwrite')
   do i = 1, nlay
-    write(u,*) i, pl(i), Tl(i), dT_rad(i), dT_conv(i), 0.5_dp*(tau_Ve(:,i+1)+tau_Ve(:,i)), 0.5_dp*(tau_IRe(:,i+1)+tau_IRe(:,i)), &
-      & k_Vl(:,i), k_IRl(:,i)
+    write(u,*) i, pl(i), Tl(i), dT_rad(i), dT_conv(i), 0.5_dp*(tau_Ve(i+1,:)+tau_Ve(i,:)), 0.5_dp*(tau_IRe(i+1,:)+tau_IRe(i,:)), &
+      & k_Vl(i,:), k_IRl(i,:)
   end do
   close(u)
 

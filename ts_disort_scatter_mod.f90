@@ -27,10 +27,10 @@ contains
     integer, intent(in) :: nlay, nlev
     real(dp), dimension(nlay), intent(in) :: Tl, pl
     real(dp), dimension(nlev), intent(in) :: pe
-    real(dp), dimension(3,nlev), intent(in) :: tau_Ve
-    real(dp), dimension(2,nlev), intent(in) :: tau_IRe
-    real(dp), dimension(3,nlay), intent(in) :: sw_a, sw_g
-    real(dp), dimension(2,nlay), intent(in) :: lw_a, lw_g
+    real(dp), dimension(nlev,3), intent(in) :: tau_Ve
+    real(dp), dimension(nlev,2), intent(in) :: tau_IRe
+    real(dp), dimension(nlay,3), intent(in) :: sw_a, sw_g
+    real(dp), dimension(nlay,2), intent(in) :: lw_a, lw_g
     real(dp), dimension(3), intent(in) :: Beta_V
     real(dp), dimension(2), intent(in) :: Beta_IR
     real(dp), intent(in) :: F0, mu_z, Tint, AB
@@ -54,8 +54,8 @@ contains
     real(dp), dimension(maxcly) :: dtauc, utau
     real(dp), dimension(maxcly) :: gg, ssalb
     real(dp), dimension(maxulv) :: sw_net, lw_net
-    real(dp), dimension(3,maxulv) :: sw_net_b
-    real(dp), dimension(2,maxulv) :: lw_net_b
+    real(dp), dimension(maxulv,3) :: sw_net_b
+    real(dp), dimension(maxulv,2) :: lw_net_b
     real(dp) :: umu0, fbeam
     logical :: planck
 
@@ -97,15 +97,15 @@ contains
       wvnmhi = 1.0e7_dp
       sw_net(:) = 0.0_dp
       do b = 1, 3
-        gg(1:nlay) = sw_g(b,:)
-        ssalb(1:nlay) = sw_a(b,:)
-        utau(1:nlev) = tau_Ve(b,:)
-        fbeam = F0 * Beta_V(b)
+        gg(1:nlay) = sw_g(:,b)
+        ssalb(1:nlay) = sw_a(:,b)
+        utau(1:nlev) = tau_Ve(:,b)
+        fbeam = (1.0_dp - AB) * F0 * Beta_V(b)
         do i = 1, nlay
-          dtauc(i) = (tau_Ve(b,i+1) - tau_Ve(b,i))
+          dtauc(i) = (tau_Ve(i+1,b) - tau_Ve(i,b))
         end do
-        call CALL_TWOSTR (nlay,Te_0,gg,ssalb,dtauc,nlev,utau,planck,wvnmlo,wvnmhi,Tint,fbeam,umu0,sw_net_b(b,:),olr_dum)
-        sw_net(:) = sw_net(:) + sw_net_b(b,:)
+        call CALL_TWOSTR (nlay,Te_0,gg,ssalb,dtauc,nlev,utau,planck,wvnmlo,wvnmhi,Tint,fbeam,umu0,sw_net_b(:,b),olr_dum)
+        sw_net(:) = sw_net(:) + sw_net_b(:,b)
       end do
     else
       sw_net(:) = 0.0_dp
@@ -119,14 +119,14 @@ contains
     wvnmhi = 1.0e7_dp
     lw_net(:) = 0.0_dp
     do b = 1, 2
-      gg(1:nlay) = lw_g(b,:)
-      ssalb(1:nlay) = lw_a(b,:)
-      utau(1:nlev) = tau_IRe(b,:)
+      gg(1:nlay) = lw_g(:,b)
+      ssalb(1:nlay) = lw_a(:,b)
+      utau(1:nlev) = tau_IRe(:,b)
       do i = 1, nlay
-        dtauc(i) = (tau_IRe(b,i+1) - tau_IRe(b,i))
+        dtauc(i) = (tau_IRe(i+1,b) - tau_IRe(i,b))
       end do
-      call CALL_TWOSTR (nlay,Te,gg,ssalb,dtauc,nlev,utau,planck,wvnmlo,wvnmhi,Tint,fbeam,umu0,lw_net_b(b,:),olr_b(b))
-      lw_net(:) = lw_net(:) + lw_net_b(b,:) * Beta_IR(b)
+      call CALL_TWOSTR (nlay,Te,gg,ssalb,dtauc,nlev,utau,planck,wvnmlo,wvnmhi,Tint,fbeam,umu0,lw_net_b(:,b),olr_b(b))
+      lw_net(:) = lw_net(:) + lw_net_b(:,b) * Beta_IR(b)
     end do
 
     !! Net fluxes at each level
@@ -145,7 +145,7 @@ contains
     implicit none
 
     real(dp), intent(in) :: xval, y1, y2, x1, x2
-    real(dp) :: lxval, ly1, ly2, lx1, lx2
+    real(dp) :: ly1, ly2
     real(dp), intent(out) :: yval
     real(dp) :: norm
 
@@ -165,7 +165,7 @@ contains
     real(dp), intent(in) :: x
     real(dp), intent(out) :: y
 
-    real(dp) :: xc, dx, dx1, dy, dy1, w, yc, t, wlim, wlim1
+    real(dp) ::  dx, dx1, dy, dy1, wh, yc, t, wlim, wlim1
 
     !xc = (xi(1) + xi(2))/2.0_dp ! Control point (no needed here, implicitly included)
     dx = xi(2) - xi(1)
@@ -176,25 +176,25 @@ contains
     if (x > xi(1) .and. x < xi(2)) then
       ! left hand side interpolation
       !print*,'left'
-      w = dx1/(dx + dx1)
+      wh = dx1/(dx + dx1)
       wlim = 1.0_dp + 1.0_dp/(1.0_dp - (dy1/dy) * (dx/dx1))
       wlim1 = 1.0_dp/(1.0_dp - (dy/dy1) * (dx1/dx))
-      if (w <= min(wlim,wlim1) .or. w >= max(wlim,wlim1)) then
-        w = 1.0_dp
+      if (wh <= min(wlim,wlim1) .or. wh >= max(wlim,wlim1)) then
+        wh = 1.0_dp
       end if
-      yc = yi(2) - dx/2.0_dp * (w*dy/dx + (1.0_dp - w)*dy1/dx1)
+      yc = yi(2) - dx/2.0_dp * (wh*dy/dx + (1.0_dp - wh)*dy1/dx1)
       t = (x - xi(1))/dx
       y = (1.0_dp - t)**2 * yi(1) + 2.0_dp*t*(1.0_dp - t)*yc + t**2*yi(2)
     else ! (x > xi(2) and x < xi(3)) then
       ! right hand side interpolation
       !print*,'right'
-      w = dx/(dx + dx1)
+      wh = dx/(dx + dx1)
       wlim = 1.0_dp/(1.0_dp - (dy1/dy) * (dx/dx1))
       wlim1 = 1.0_dp + 1.0_dp/(1.0_dp - (dy/dy1) * (dx1/dx))
-      if (w <= min(wlim,wlim1) .or. w >= max(wlim,wlim1)) then
-        w = 1.0_dp
+      if (wh <= min(wlim,wlim1) .or. wh >= max(wlim,wlim1)) then
+        wh = 1.0_dp
       end if
-      yc = yi(2) + dx1/2.0_dp * (w*dy1/dx1 + (1.0_dp - w)*dy/dx)
+      yc = yi(2) + dx1/2.0_dp * (wh*dy1/dx1 + (1.0_dp - wh)*dy/dx)
       t = (x - xi(2))/(dx1)
       y = (1.0_dp - t)**2 * yi(2) + 2.0_dp*t*(1.0_dp - t)*yc + t**2*yi(3)
     end if

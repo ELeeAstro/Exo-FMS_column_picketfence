@@ -75,9 +75,9 @@ contains
     integer, intent(in) :: nlay, nlev
     real(dp), dimension(nlay), intent(in) :: Tl, pl
     real(dp), dimension(nlev), intent(in) :: pe, mu_z
-    real(dp), dimension(3,nlev), intent(in) :: tau_Ve
-    real(dp), dimension(2,nlev), intent(in) :: tau_IRe
-    real(dp), dimension(3,nlay), intent(in) :: sw_a, sw_g, lw_a, lw_g
+    real(dp), dimension(nlev,3), intent(in) :: tau_Ve
+    real(dp), dimension(nlev,2), intent(in) :: tau_IRe
+    real(dp), dimension(nlay,3), intent(in) :: sw_a, sw_g, lw_a, lw_g
     real(dp), dimension(3), intent(in) :: Beta_V
     real(dp), dimension(2), intent(in) :: Beta_IR
     real(dp), intent(in) :: F0, Tint, AB, sw_a_surf, lw_a_surf
@@ -93,8 +93,8 @@ contains
     real(dp), dimension(nlev) :: lpe
     real(dp), dimension(nlay) :: lTl, lpl
     real(dp), dimension(nlev) :: sw_down, sw_up, lw_down, lw_up
-    real(dp), dimension(3,nlev) :: sw_down_b, sw_up_b
-    real(dp), dimension(2,nlev) :: lw_down_b, lw_up_b
+    real(dp), dimension(nlev,3) :: sw_down_b, sw_up_b
+    real(dp), dimension(nlev,2) :: lw_down_b, lw_up_b
     real(dp), dimension(nlev) :: lw_net, sw_net
 
     !! Find temperature at layer edges through interpolation and extrapolation
@@ -132,10 +132,10 @@ contains
       sw_up(:) = 0.0_dp
       do b = 1, 3
         Finc_b = Finc * Beta_V(b)
-        call sw_grey_updown_Toon(nlay, nlev, Finc_b, tau_Ve(b,:), mu_z(:), sw_a(b,:), sw_g(b,:), sw_a_surf, &
-        & sw_down_b(b,:), sw_up_b(b,:))
-        sw_down(:) = sw_down(:) + sw_down_b(b,:)
-        sw_up(:) = sw_up(:) + sw_up_b(b,:)
+        call sw_grey_updown_Toon(nlay, nlev, Finc_b, tau_Ve(:,b), mu_z(:), sw_a(:,b), sw_g(:,b), sw_a_surf, &
+        & sw_down_b(:,b), sw_up_b(:,b))
+        sw_down(:) = sw_down(:) + sw_down_b(:,b)
+        sw_up(:) = sw_up(:) + sw_up_b(:,b)
       end do
     else
       sw_down(:) = 0.0_dp
@@ -150,10 +150,10 @@ contains
     do b = 1, 2
       be_b(:) = be(:) * Beta_IR(b)
       be_int_b = be_int * Beta_IR(b)
-      call lw_grey_updown_Toon(nlay, nlev, be_b, be_int_b, tau_IRe(b,:), lw_a(b,:), lw_g(b,:), lw_a_surf, &
-      & lw_up_b(b,:), lw_down_b(b,:))
-      lw_up(:) = lw_up(:) + lw_up_b(b,:)
-      lw_down(:) = lw_down(:) + lw_down_b(b,:)
+      call lw_grey_updown_Toon(nlay, nlev, be_b, tau_IRe(:,b), lw_a(:,b), lw_g(:,b), lw_a_surf, &
+      & lw_up_b(:,b), lw_down_b(:,b))
+      lw_up(:) = lw_up(:) + lw_up_b(:,b)
+      lw_down(:) = lw_down(:) + lw_down_b(:,b)
     end do
 
     !! Net fluxes at each level
@@ -172,18 +172,18 @@ contains
 
   end subroutine ts_Toon_scatter
 
-  subroutine lw_grey_updown_Toon(nlay, nlev, be, be_int, tau_IR1, w01, gin, rsurf, lw_up, lw_down)
+  subroutine lw_grey_updown_Toon(nlay, nlev, be, tau_IR1, w01, gin, rsurf, lw_up, lw_down)
     implicit none
 
     !! Input
     integer, intent(in) :: nlay, nlev
-    real(dp), intent(in) :: rsurf, be_int
+    real(dp), intent(in) :: rsurf
     real(dp), dimension(nlev), intent(in) :: tau_IR1, be
     real(dp), dimension(nlay), intent(in) :: w01, gin
 
     !! Output
     real(dp), dimension(nlev), intent(out) :: lw_up, lw_down
-    real(dp), dimension(nlev) :: lw_up_raw, lw_down_raw
+    !real(dp), dimension(nlev) :: lw_up_raw, lw_down_raw
 
     !! Work variables
     integer :: k, i, n, m
@@ -194,14 +194,14 @@ contains
     real(dp), dimension(nlay) :: w0, hg
     real(dp), dimension(nlay) :: B0, B1
     real(dp), dimension(nlay) :: lam, gam, alp, term
-    real(dp), dimension(nlay) :: Am, Ap, Cpm1, Cmm1, Cp, Cm
+    real(dp), dimension(nlay) :: Cpm1, Cmm1, Cp, Cm
     real(dp), dimension(nlay) :: exptrm, Ep, Em, E1, E2, E3, E4
     real(dp), dimension(nlay+nlay) :: Af, Bf, Cf, Df, xkk
     real(dp), dimension(nlay) :: xk1, xk2
 
     real(dp), dimension(nlay) :: alphax, g, h, xj, xk
     real(dp), dimension(nlay) :: alpha1, alpha2, sigma1, sigma2
-    real(dp), dimension(nlay) :: em1, obj, epp, em4_mp, obj2, epp2, em2, em3
+    real(dp), dimension(nlay) :: em1, obj, epp, obj2, epp2, em2, em3
 
     real(dp), dimension(nlev) :: lw_up_g, lw_down_g
 
@@ -249,7 +249,7 @@ contains
     tautop = dtau(1)*exp(-1.0_dp)
     Btop = (1.0_dp-exp(-tautop/ubari))*be(1)
     Bsurf = be(nlev)
-    bottom = Bsurf + B1(nlev)*ubari
+    bottom = Bsurf + B1(nlay)*ubari
 
     !Solve for the coefficients of system of equations using boundary conditions
     !Exponential terms:
@@ -358,7 +358,7 @@ contains
         & sigma2(k)*(uarr(m)*em2(k)+dtau(k)-uarr(m))
       end do
 
-      lw_up_g(nlev) = twopi*(Bsurf+B1(nlev)*uarr(m))
+      lw_up_g(nlev) = twopi*(Bsurf+B1(nlay)*uarr(m))
       do k = nlay, 1, -1
         lw_up_g(k) = lw_up_g(k+1)*em2(k) + &
         & (g(k)/(lam(k)*uarr(m)-1.0_dp))*(epp(k)*em2(k)-1.0_dp) + &
@@ -408,7 +408,7 @@ contains
     btop = 0.0_dp
 
     ! If zero albedo across all atmospheric layers then return direct beam only
-    if (all(w(:) <= 1.0e-12_dp)) then
+    if (all(w01(:) <= 1.0e-12_dp)) then
 
       if (mu_z(nlev) == mu_z(1)) then
         ! No zenith correction, use regular method
@@ -566,7 +566,7 @@ contains
 
     integer :: i
     integer, parameter :: nmax = 301
-    real(dp) :: x, xkb
+    real(dp) :: x
     real(dp), dimension(nmax) :: as, ds
 
     as(l) = af(l)/bf(l)
@@ -591,7 +591,7 @@ contains
     implicit none
 
     real(dp), intent(in) :: xval, y1, y2, x1, x2
-    real(dp) :: lxval, ly1, ly2, lx1, lx2
+    real(dp) :: ly1, ly2
     real(dp), intent(out) :: yval
     real(dp) :: norm
 
@@ -611,7 +611,7 @@ contains
     real(dp), intent(in) :: x
     real(dp), intent(out) :: y
 
-    real(dp) :: xc, dx, dx1, dy, dy1, w, yc, t, wlim, wlim1
+    real(dp) :: dx, dx1, dy, dy1, wh, yc, t, wlim, wlim1
 
     !xc = (xi(1) + xi(2))/2.0_dp ! Control point (no needed here, implicitly included)
     dx = xi(2) - xi(1)
@@ -622,25 +622,25 @@ contains
     if (x > xi(1) .and. x < xi(2)) then
       ! left hand side interpolation
       !print*,'left'
-      w = dx1/(dx + dx1)
+      wh = dx1/(dx + dx1)
       wlim = 1.0_dp + 1.0_dp/(1.0_dp - (dy1/dy) * (dx/dx1))
       wlim1 = 1.0_dp/(1.0_dp - (dy/dy1) * (dx1/dx))
-      if (w <= min(wlim,wlim1) .or. w >= max(wlim,wlim1)) then
-        w = 1.0_dp
+      if (wh <= min(wlim,wlim1) .or. wh >= max(wlim,wlim1)) then
+        wh = 1.0_dp
       end if
-      yc = yi(2) - dx/2.0_dp * (w*dy/dx + (1.0_dp - w)*dy1/dx1)
+      yc = yi(2) - dx/2.0_dp * (wh*dy/dx + (1.0_dp - wh)*dy1/dx1)
       t = (x - xi(1))/dx
       y = (1.0_dp - t)**2 * yi(1) + 2.0_dp*t*(1.0_dp - t)*yc + t**2*yi(2)
     else ! (x >= xi(2) and x <= xi(3)) then
       ! right hand side interpolation
       !print*,'right'
-      w = dx/(dx + dx1)
+      wh = dx/(dx + dx1)
       wlim = 1.0_dp/(1.0_dp - (dy1/dy) * (dx/dx1))
       wlim1 = 1.0_dp + 1.0_dp/(1.0_dp - (dy/dy1) * (dx1/dx))
-      if (w <= min(wlim,wlim1) .or. w >= max(wlim,wlim1)) then
-        w = 1.0_dp
+      if (wh <= min(wlim,wlim1) .or. wh >= max(wlim,wlim1)) then
+        wh = 1.0_dp
       end if
-      yc = yi(2) + dx1/2.0_dp * (w*dy1/dx1 + (1.0_dp - w)*dy/dx)
+      yc = yi(2) + dx1/2.0_dp * (wh*dy1/dx1 + (1.0_dp - wh)*dy/dx)
       t = (x - xi(2))/(dx1)
       y = (1.0_dp - t)**2 * yi(2) + 2.0_dp*t*(1.0_dp - t)*yc + t**2*yi(3)
     end if

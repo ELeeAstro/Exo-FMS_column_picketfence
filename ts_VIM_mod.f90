@@ -1,16 +1,13 @@
-!!! In development !!!
-
 !!!
-! Elspeth KH Lee - Jun 2022 : Initial version
-!
+! Elspeth KH Lee - Aug 2023 : Initial version
 ! sw: Adding layer method with scattering
-! lw: Two-stream method following the short characteristics method (e.g. Helios-r2: Kitzmann et al. 2018)
-!     Uses the method of short characteristics (Olson & Kunasz 1987) with quadratic interpolants.
-!     Pros: Not many compared to linear or Bezier interpolants, use for general interest only
-!     Cons: No lw scattering
+! lw: Variational Iteration Method - Follows Zhang et al. (2017)
+!     Uses AA as an intial guess, then applies VIM to calculate the scattering component
+! Pros: Very fast method with LW scattering approximation, no matrix inversions - better than AA alone
+! Cons: Still an approximation (though quite good for a non-matrix method)
 !!!
 
-module ts_short_char_mod_parabolic
+module ts_VIM_mod
   use, intrinsic :: iso_fortran_env
   implicit none
 
@@ -22,50 +19,24 @@ module ts_short_char_mod_parabolic
   real(dp), parameter :: twopi = 2.0_dp * pi
   real(dp), parameter :: sb = 5.670374419e-8_dp
 
-  !! Gauss quadrature variables, cosine angle values (uarr] and weights (w)
-  !! here you can comment in/out groups of mu values for testing
-  !! make sure to make clean and recompile if you change these
+  !! Legendre quadrature for 1 nodes
+  ! integer, parameter :: nmu = 1
+  ! real(dp), dimension(nmu), parameter :: uarr = (/1.0_dp/1.6487213_dp/)
+  ! real(dp), dimension(nmu), parameter :: w = (/1.0_dp/)
+  ! real(dp), dimension(nmu), parameter :: wuarr = uarr * w
 
-  !! single angle diffusion factor approximation - typically 1/1.66
-  !integer, parameter :: nmu = 1
-  !real(dp), dimension(nmu), parameter :: uarr = (/1.0_dp/1.66_dp/)
-  !real(dp), dimension(nmu), parameter :: w = (/1.0_dp/)
-  !real(dp), dimension(nmu), parameter :: wuarr = uarr * w
-
-
-  !! Legendre quadrature for 2 nodes
   integer, parameter :: nmu = 2
   real(dp), dimension(nmu), parameter :: uarr = (/0.21132487_dp, 0.78867513_dp/)
   real(dp), dimension(nmu), parameter :: w = (/0.5_dp, 0.5_dp/)
   real(dp), dimension(nmu), parameter :: wuarr = uarr * w
 
-  !! Lacis & Oinas (1991) 3 point numerical values - Does not work somehow, e-mail me if you know why :)
-  ! integer, parameter :: nmu = 3
-  ! real(dp), dimension(nmu), parameter :: uarr = (/0.1_dp, 0.5_dp, 1.0_dp/)
-  ! real(dp), dimension(nmu), parameter :: wuarr = (/0.0433_dp, 0.5742_dp, 0.3825_dp/)
-
-  !! Legendre quadrature for 4 nodes
-  ! integer, parameter :: nmu = 4
-  ! real(dp), dimension(nmu), parameter :: uarr = &
-  !   & (/0.06943184_dp, 0.33000948_dp, 0.66999052_dp, 0.93056816_dp/)
-  ! real(dp), dimension(nmu), parameter :: w = &
-  !   & (/0.17392742_dp, 0.32607258_dp, 0.32607258_dp, 0.17392742_dp/)
-  ! real(dp), dimension(nmu), parameter :: wuarr = uarr * w
-
-  !! 5 point EGP quadrature values
-  ! integer, parameter :: nmu = 5
-  ! real(dp), dimension(nmu), parameter :: uarr = &
-  !   &(/0.0985350858_dp, 0.3045357266_dp, 0.5620251898_dp, 0.8019865821_dp, 0.9601901429_dp/)
-  ! real(dp), dimension(nmu), parameter :: wuarr = &
-  !   & (/0.0157479145_dp, 0.0739088701_dp, 0.1463869871_dp, 0.1671746381_dp, 0.0967815902_dp/)
-
-  public :: ts_short_char_parabolic
-  private :: lw_grey_updown_parabolic, sw_grey_updown_adding, linear_log_interp, bezier_interp
+  public :: ts_VIM
+  private :: lw_grey_updown, sw_grey_updown_adding, linear_log_interp, bezier_interp
 
 contains
 
-  subroutine ts_short_char_parabolic(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, &
-    & mu_z, F0, Tint, AB, Beta_V, Beta_IR, sw_a, sw_g, sw_a_surf, net_F, olr, asr)
+  subroutine ts_VIM(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, Beta_V, Beta_IR, &
+    & sw_a, sw_g, lw_a, lw_g,  sw_a_surf, lw_a_surf, net_F, olr, asr)
     implicit none
 
     !! Input variables
@@ -73,26 +44,26 @@ contains
     integer, intent(in) :: nlay, nlev
     real(dp), dimension(nlay), intent(in) :: Tl, pl
     real(dp), dimension(nlev), intent(in) :: pe, mu_z
-    real(dp), dimension(3,nlev), intent(in) :: tau_Ve
-    real(dp), dimension(2,nlev), intent(in) :: tau_IRe
-    real(dp), dimension(3,nlay), intent(in) :: sw_a, sw_g
+    real(dp), dimension(nlev,3), intent(in) :: tau_Ve
+    real(dp), dimension(nlev,2), intent(in) :: tau_IRe
+    real(dp), dimension(nlay,3), intent(in) :: sw_a, sw_g, lw_a, lw_g
     real(dp), dimension(3), intent(in) :: Beta_V
     real(dp), dimension(2), intent(in) :: Beta_IR
-    real(dp), intent(in) :: F0, Tint, AB, sw_a_surf
+    real(dp), intent(in) :: F0, Tint, AB, sw_a_surf, lw_a_surf
 
     !! Output variables
-    real(dp), intent(out) :: olr, asr
+    real(dp),  intent(out) :: olr, asr
     real(dp), dimension(nlev), intent(out) :: net_F
 
     !! Work variables
     integer :: i, b
     real(dp) :: Finc, be_int, Finc_b, be_int_b
+    real(dp), dimension(nlev) :: Te, be, be_b
     real(dp), dimension(nlev) :: lpe
     real(dp), dimension(nlay) :: lTl, lpl
-    real(dp), dimension(nlev) :: Te, be, be_b
     real(dp), dimension(nlev) :: sw_down, sw_up, lw_down, lw_up
-    real(dp), dimension(3,nlev) :: sw_down_b, sw_up_b
-    real(dp), dimension(2,nlev) :: lw_down_b, lw_up_b
+    real(dp), dimension(nlev,3) :: sw_down_b, sw_up_b
+    real(dp), dimension(nlev,2) :: lw_down_b, lw_up_b
     real(dp), dimension(nlev) :: lw_net, sw_net
 
     !! Find temperature at layer edges through interpolation and extrapolation
@@ -130,10 +101,10 @@ contains
       sw_up(:) = 0.0_dp
       do b = 1, 3
         Finc_b = Finc * Beta_V(b)
-        call sw_grey_updown_adding(nlay, nlev, Finc_b, tau_Ve(b,:), mu_z(:), sw_a(b,:), sw_g(b,:), sw_a_surf, &
-        & sw_down_b(b,:), sw_up_b(b,:))
-        sw_down(:) = sw_down(:) + sw_down_b(b,:)
-        sw_up(:) = sw_up(:) + sw_up_b(b,:)
+        call sw_grey_updown_adding(nlay, nlev, Finc_b, tau_Ve(:,b), mu_z(:), sw_a(:,b), sw_g(:,b), sw_a_surf, &
+          & sw_down_b(:,b), sw_up_b(:,b))
+        sw_down(:) = sw_down(:) + sw_down_b(:,b)
+        sw_up(:) = sw_up(:) + sw_up_b(:,b)
       end do
     else
       sw_down(:) = 0.0_dp
@@ -143,117 +114,228 @@ contains
     !! Longwave two-stream flux calculation
     be(:) = (sb * Te(:)**4)/pi  ! Integrated planck function intensity at levels
     be_int = (sb * Tint**4)/pi ! Integrated planck function intensity for internal temperature
+
+    !! Longwave two-stream flux calculation
+    be(:) = (sb * Te(:)**4)/pi  ! Integrated planck function intensity at levels
+    be_int = (sb * Tint**4)/pi ! Integrated planck function intensity for internal temperature
     lw_up(:) = 0.0_dp
     lw_down(:) = 0.0_dp
     do b = 1, 2
       be_b(:) = be(:) * Beta_IR(b)
       be_int_b = be_int * Beta_IR(b)
-      call lw_grey_updown_parabolic(nlay, nlev, be_b, be_int_b, tau_IRe(b,:),  lw_up_b(b,:), lw_down_b(b,:))
-      lw_up(:) = lw_up(:) + lw_up_b(b,:)
-      lw_down(:) = lw_down(:) + lw_down_b(b,:)
+      call lw_grey_updown(nlay, nlev, be_b, be_int_b, tau_IRe(:,b), lw_a(:,b), lw_g(:,b), lw_up_b(:,b), lw_down_b(:,b))
+      lw_up(:) = lw_up(:) + lw_up_b(:,b)
+      lw_down(:) = lw_down(:) + lw_down_b(:,b)
     end do
-
     !! Net fluxes at each level
     lw_net(:) = lw_up(:) - lw_down(:)
     sw_net(:) = sw_up(:) - sw_down(:)
     net_F(:) = lw_net(:) + sw_net(:)
 
-    !! Output olr
+    !! Output the olr
     olr = lw_up(1)
 
     !! Output asr
     asr = sw_down(1) - sw_up(1)
 
-  end subroutine ts_short_char_parabolic
+  end subroutine ts_VIM
 
-  subroutine lw_grey_updown_parabolic(nlay, nlev, be, be_int, tau_IRe, lw_up, lw_down)
+  subroutine lw_grey_updown(nlay, nlev, be, be_int, tau_IRe, ww, gg, lw_up, lw_down)
     implicit none
 
     !! Input variables
     integer, intent(in) :: nlay, nlev
     real(dp), dimension(nlev), intent(in) :: be, tau_IRe
+    real(dp), dimension(nlay), intent(in) :: ww, gg
     real(dp), intent(in) :: be_int
 
     !! Output variables
     real(dp), dimension(nlev), intent(out) :: lw_up, lw_down
 
     !! Work variables and arrays
-    integer :: k, m
-    real(dp), dimension(nlay) :: dtau, edel
-    real(dp), dimension(nlay) :: del, e0i, e1i, e1i_del
-    real(dp), dimension(nlay) :: Am, Bm, Gm, Ap, Bp, Gp
-    real(dp), dimension(nlev) :: lw_up_g, lw_down_g
+    integer :: k, i, j
+    real(dp), dimension(nlay) :: w0, hg
+    real(dp), dimension(nlay) :: dtau, beta, epsg, eps, dtau_eg, dtau_e
+    real(dp), dimension(nmu, nlev) :: lw_up_g, lw_down_g
+    real(dp), dimension(nmu, nlay) :: T_eg, T_e, T, cp, cm, wconst
+    real(dp), dimension(nmu, nmu, nlay) :: Sp, Sm, phip, phim
 
+    real(dp) :: bp, bm, dpp, dm, zepp, zemm, zepm, zemp
+    real(dp) :: first, second, third
+
+    
     !! Calculate dtau in each layer
+    dtau(:) = tau_IRe(2:) - tau_IRe(1:nlay)
+
+    ! Delta eddington scaling
+    w0(:) = (1.0_dp - gg(:)**2)*ww(:)/(1.0_dp-ww(:)*gg(:)**2)
+    dtau(:) = (1.0_dp-ww(:)*gg(:)**2)*dtau(:)
+    hg(:) = gg(:)/(1.0_dp + gg(:))
+
+    !! Log B with tau function
     do k = 1, nlay
-      dtau(k) = tau_IRe(k+1) - tau_IRe(k)
+      if (dtau(k) < 1.0e-8_dp) then
+        ! Too low optical depth for numerical stability, Bln = 0
+        beta(k) = 0.0_dp
+      else
+        ! Log B with tau value
+        beta(k) = -log(be(k+1)/be(k))/dtau(k)
+      end if
+    end do
+
+    !! modified co-albedo epsilon
+    epsg(:) = sqrt((1.0_dp - w0(:))*(1.0_dp - hg(:)*w0(:)))
+    eps(:) = 1.0_dp - w0(:)
+
+    !! Absorption/modified optical depth for transmission function
+    dtau_eg(:) = epsg(:)*dtau(:)
+    dtau_e(:) = eps(:)*dtau(:)
+
+    !! Efficency variables and loop
+    do i = 1, nmu
+      T_eg(i,:) = exp(-dtau_eg(:)/uarr(i)) ! eg Transmission function
+      T_e(i,:) = exp(-dtau_e(:)/uarr(i)) ! e Transmission function
+      T(i,:) = exp(-dtau(:)/uarr(i)) ! regular Transmission function
+      cp(i,:) = eps(:)/(uarr(i)*beta(:) + eps(:)) !c+
+      cm(i,:) =  eps(:)/(-(uarr(i))*beta(:) + eps(:)) !c-
+      wconst(i,:) = w0(:)/(real(nmu*2,dp)*(uarr(i))) !constant factor for scattering component
+      do j = 1, nmu
+        phip(i,j,:) = 1.0_dp + 3.0_dp*hg(:)*uarr(i)*uarr(j)   ! phi (net positive mu)
+        phim(i,j,:) = 1.0_dp + 3.0_dp*hg(:)*-(uarr(i))*uarr(j) ! phi (net negative mu)
+      end do
+    end do
+
+    !! Start loops to integrate in mu space
+    do i = 1, nmu
+
+      !! Begin two-stream loops
+      !! Perform downward loop first - also calculate efficency variables
+      ! Top boundary condition - 0 flux downward from top boundary
+      lw_down_g(i,1) = 0.0_dp
+      do k = 1, nlay
+        !! Downward AA sweep
+        lw_down_g(i,k+1) = lw_down_g(i,k)*T_eg(i,k) + &
+          & epsg(k)/(uarr(i)*beta(k) - epsg(k)) * (be(k)*T_eg(i,k) - be(k+1))
+      end do
+
+      !! Perform upward loop
+      ! Lower boundary condition - internal heat definition Fint = F_down - F_up
+      ! here the lw_a_surf is assumed to be = 1 as per the definition
+      ! here we use the same condition but use intensity units to be consistent
+      lw_up_g(i,nlev) = lw_down_g(i,nlev) + be_int
+      do k = nlay, 1, -1
+        !! Upward AA sweep
+        lw_up_g(i,k) = lw_up_g(i,k+1)*T_eg(i,k) + &
+          & epsg(k)/(uarr(i)*beta(k) + epsg(k)) * (be(k) - be(k+1)*T_eg(i,k))
+      end do
+
+    end do
+
+    !! Find Sp and Sm - it's now best to put mu into the inner loop
+    ! Sp and Sm defined at lower level edges, zero upper boundary condition
+    do k = 1, nlay
+      if (w0(k) <= 1.0e-6_dp) then
+         Sp(:,:,k) = 0.0_dp
+         Sm(:,:,k) = 0.0_dp
+        cycle
+      end if
+      do i = 1, nmu
+        do j = 1, nmu
+
+          !! Note, possible negative sign mistake in Zhang et al. (2017) - zepm and zepp must be positive quantities
+          !! To get back the correct expression for the two-stream version
+          zepp = -(uarr(i)*uarr(j))/(uarr(i)*eps(k) - uarr(j))
+          zemp = (-(uarr(i))*uarr(j))/(-(uarr(i))*eps(k) - uarr(j))
+          zepm = -(uarr(i)*-(uarr(j)))/(uarr(i)*eps(k) + uarr(j))
+          zemm = (uarr(i)*uarr(j))/(-(uarr(i))*eps(k) + uarr(j))
+
+          first = phip(i,j,k) * zepm * (lw_down_g(j,k) - be(k)*cm(j,k)) * &
+            & (1.0_dp - exp(-dtau(k)/zepm))
+          second = phim(i,j,k) * zepp * (lw_up_g(j,k+1) - be(k+1)*cp(j,k)) * &
+            & (T_e(j,k) - T(i,k))
+
+          Sp(i,j,k) = first + second
+
+          first = phip(i,j,k) * zemp * (lw_up_g(j,k+1) - be(k+1)*cp(j,k)) * &
+            & (1.0_dp - exp(-dtau(k)/zemp))
+          second = phim(i,j,k) * zemm * (lw_down_g(j,k) - be(k)*cm(j,k)) * &
+            & (T_e(j,k) - T(i,k))
+
+          Sm(i,j,k) = first + second
+
+        end do
+      end do
     end do
 
     ! Zero the total flux arrays
     lw_up(:) = 0.0_dp
     lw_down(:) = 0.0_dp
 
-    !! Start loops to integrate in mu space
-    do m = 1, nmu
-
-      del(:) = dtau(:)/uarr(m)
-      edel(:) = exp(-del(:))
-      e0i(:) = 1.0_dp - edel(:)
-
-      !! Prepare loop
-      ! Olson & Kunasz (1987) parabolic interpolant parameters
-      do k = 1, nlay
-        if (edel(k) > 0.999_dp) then
-          ! If we are in very low optical depth regime, then use an isothermal approximation
-          Am(k) = (0.5_dp*(be(k+1) + be(k)) * e0i(k))/be(k)
-          Bm(k) = 0.0_dp
-          Gm(k) = 0.0_dp
-          Ap(k) = 0.0_dp
-          Bp(k) = Am(:)
-          Gp(k) = 0.0_dp
-        else
-          ! Use parabolic interpolants
-          e1i(k) = del(k) - e0i(k)
-          e2i(k) = del(k)**2 - 2.0_dp*e1i(k)
-
-          Am(k) = e0i(k) + (e1i(k) - (del(k+1) + 2.0_dp*del(k))*e1i(k) ! Am(k) = Gp(k), just indexed differently
-          Bm(k) = e1i_del(k) ! Bm(k) = Bp(k), just indexed differently
-          Gm(k) = 0.0_dp
-          Ap(k) = 0.0_dp
-          Bp(k) = Bm(k)
-          Gp(k) = Am(k)
-        end if
-      end do
+    !! Do final two sweeps including scattering source function - 
+    !! Note, don't use AA here, just regular transmission function
+    do i = 1, nmu
 
       !! Begin two-stream loops
       !! Perform downward loop first
       ! Top boundary condition - 0 flux downward from top boundary
-      lw_down_g(1) = 0.0_dp
+      lw_down_g(i,1) = 0.0_dp
       do k = 1, nlay
-        lw_down_g(k+1) = lw_down_g(k)*edel(k) + Am(k)*be(k) + Bm(k)*be(k+1) ! TS intensity
+
+        dm = eps(k)/(-(uarr(i))*beta(k) + 1.0_dp)
+
+        lw_down_g(i,k+1) = lw_down_g(i,k)*T(i,k) + &
+          & dm*(be(k+1) - be(k)*T(i,k))
+
+        bm = -(uarr(i))/(-(uarr(i))*beta(k) + 1.0_dp)
+
+        third = 0.0_dp
+        do j = 1, nmu
+          third = third + &
+            & (Sm(i,j,k) - bm*(cp(j,k)*phim(i,j,k) + cm(j,k)*phip(i,j,k))*(be(k+1) - be(k)*T(i,k)))
+        end do
+
+        lw_down_g(i,k+1) = lw_down_g(i,k+1) + wconst(i,k)*third
+
       end do
 
       !! Perform upward loop
       ! Lower boundary condition - internal heat definition Fint = F_down - F_up
+      ! here the lw_a_surf is assumed to be = 1 as per the definition
       ! here we use the same condition but use intensity units to be consistent
-      lw_up_g(nlev) = lw_down_g(nlev) + be_int
+      lw_up_g(i,nlev) = lw_down_g(i,nlev) + be_int
+
       do k = nlay, 1, -1
-        lw_up_g(k) = lw_up_g(k+1)*edel(k) + Bp(k)*be(k) + Gp(k)*be(k+1) ! TS intensity
+
+        dpp = eps(k)/(uarr(i)*beta(k) + 1.0_dp)
+
+        lw_up_g(i,k) = lw_up_g(i,k+1)*T(i,k) - &
+          & dpp*(be(k+1)*T(i,k) - be(k))
+
+        bp = uarr(i)/(uarr(i)*beta(k) + 1.0_dp)  
+
+        third = 0.0_dp
+        do j = 1, nmu
+          third = third + &
+            & (Sp(i,j,k) - bp*(cp(j,k)*phip(i,j,k) + cm(j,k)*phim(i,j,k))*(be(k+1)*T(i,k) - be(k)))
+        end do
+
+        lw_up_g(i,k) = lw_up_g(i,k) + wconst(i,k)*third
+
       end do
 
       !! Sum up flux arrays with Gaussian quadrature weights and points for this mu stream
-      lw_down(:) = lw_down(:) + lw_down_g(:) * wuarr(m)
-      lw_up(:) = lw_up(:) + lw_up_g(:) * wuarr(m)
+      lw_down(:) = lw_down(:) + lw_down_g(i,:) * wuarr(i)
+      lw_up(:) = lw_up(:) + lw_up_g(i,:) * wuarr(i)
 
     end do
 
-    !! The flux is the intensity * 2pi
+    !! The flux is the integrated intensity * 2pi
     lw_down(:) = twopi * lw_down(:)
     lw_up(:) = twopi * lw_up(:)
 
-  end subroutine lw_grey_updown_parabolic
+  end subroutine lw_grey_updown
 
-  subroutine sw_grey_updown_adding(nlay, nlev, Finc, tau_Ve, mu_z, w_in, g_in, w_surf, sw_down, sw_up)
+ subroutine sw_grey_updown_adding(nlay, nlev, Finc, tau_Ve, mu_z, w_in, g_in, w_surf, sw_down, sw_up)
     implicit none
 
     !! Input variables
@@ -267,25 +349,25 @@ contains
 
     !! Work variables
     integer :: k
-    real(dp) :: lamtau, e_lamtau, lim, arg, apg, amg
-    real(dp), dimension(nlev) ::  w, g, f
+    real(dp) :: lamtau, e_lamtau, arg, apg, amg
+    real(dp), dimension(nlev) ::  om, g, f
     real(dp), dimension(nlev) :: tau_Ve_s
     real(dp), dimension(nlay) :: tau
-    real(dp), dimension(nlev) :: tau_s, w_s, f_s, g_s
+    real(dp), dimension(nlev) :: tau_s, w_s, g_s
     real(dp), dimension(nlev) :: lam, u, N, gam, alp
     real(dp), dimension(nlev) :: R_b, T_b, R, T
     real(dp), dimension(nlev) :: Tf
     real(dp), dimension(nlev) :: cum_trans
 
     ! Design w and g to include surface property level
-    w(1:nlay) = w_in(:)
+    om(1:nlay) = w_in(:)
     g(1:nlay) = g_in(:)
 
-    w(nlev) = 0.0_dp
+    om(nlev) = 0.0_dp
     g(nlev) = 0.0_dp
 
     ! If zero albedo across all atmospheric layers then return direct beam only
-    if (all(w(:) <= 1.0e-12_dp)) then
+    if (all(om(:) <= 1.0e-12_dp)) then
 
       if (mu_z(nlev) == mu_z(1)) then
         ! No zenith correction, use regular method
@@ -308,7 +390,7 @@ contains
 
     end if
 
-    w(nlev) = w_surf
+    om(nlev) = w_surf
     g(nlev) = 0.0_dp
 
     ! Backscattering approximation
@@ -318,13 +400,13 @@ contains
     tau_Ve_s(1) = tau_Ve(1)
     do k = 1, nlay
       tau(k) = tau_Ve(k+1) - tau_Ve(k)
-      tau_s(k) = tau(k) * (1.0_dp - w(k)*f(k))
+      tau_s(k) = tau(k) * (1.0_dp - om(k)*f(k))
       tau_Ve_s(k+1) = tau_Ve_s(k) + tau_s(k)
     end do
 
     do k = 1, nlev
 
-      w_s(k) = w(k) * ((1.0_dp - f(k))/(1.0_dp - w(k)*f(k)))
+      w_s(k) = om(k) * ((1.0_dp - f(k))/(1.0_dp - om(k)*f(k)))
       g_s(k) = (g(k) - f(k))/(1.0_dp - f(k))
       lam(k) = sqrt(3.0_dp*(1.0_dp - w_s(k))*(1.0_dp - w_s(k)*g_s(k)))
       gam(k) = 0.5_dp * w_s(k) * (1.0_dp + 3.0_dp*g_s(k)*(1.0_dp - w_s(k))*mu_z(k)**2)/(1.0_dp - lam(k)**2*mu_z(k)**2)
@@ -380,7 +462,7 @@ contains
     implicit none
 
     real(dp), intent(in) :: xval, y1, y2, x1, x2
-    real(dp) :: lxval, ly1, ly2, lx1, lx2
+    real(dp) :: ly1, ly2
     real(dp), intent(out) :: yval
     real(dp) :: norm
 
@@ -400,7 +482,7 @@ contains
     real(dp), intent(in) :: x
     real(dp), intent(out) :: y
 
-    real(dp) :: xc, dx, dx1, dy, dy1, w, yc, t, wlim, wlim1
+    real(dp) :: dx, dx1, dy, dy1, wh, yc, t, wlim, wlim1
 
     !xc = (xi(1) + xi(2))/2.0_dp ! Control point (no needed here, implicitly included)
     dx = xi(2) - xi(1)
@@ -411,29 +493,29 @@ contains
     if (x > xi(1) .and. x < xi(2)) then
       ! left hand side interpolation
       !print*,'left'
-      w = dx1/(dx + dx1)
+      wh = dx1/(dx + dx1)
       wlim = 1.0_dp + 1.0_dp/(1.0_dp - (dy1/dy) * (dx/dx1))
       wlim1 = 1.0_dp/(1.0_dp - (dy/dy1) * (dx1/dx))
-      if (w <= min(wlim,wlim1) .or. w >= max(wlim,wlim1)) then
-        w = 1.0_dp
+      if (wh <= min(wlim,wlim1) .or. wh >= max(wlim,wlim1)) then
+        wh = 1.0_dp
       end if
-      yc = yi(2) - dx/2.0_dp * (w*dy/dx + (1.0_dp - w)*dy1/dx1)
+      yc = yi(2) - dx/2.0_dp * (wh*dy/dx + (1.0_dp - wh)*dy1/dx1)
       t = (x - xi(1))/dx
       y = (1.0_dp - t)**2 * yi(1) + 2.0_dp*t*(1.0_dp - t)*yc + t**2*yi(2)
     else ! (x > xi(2) and x < xi(3)) then
       ! right hand side interpolation
       !print*,'right'
-      w = dx/(dx + dx1)
+      wh = dx/(dx + dx1)
       wlim = 1.0_dp/(1.0_dp - (dy1/dy) * (dx/dx1))
       wlim1 = 1.0_dp + 1.0_dp/(1.0_dp - (dy/dy1) * (dx1/dx))
-      if (w <= min(wlim,wlim1) .or. w >= max(wlim,wlim1)) then
-        w = 1.0_dp
+      if (wh <= min(wlim,wlim1) .or. wh>= max(wlim,wlim1)) then
+        wh = 1.0_dp
       end if
-      yc = yi(2) + dx1/2.0_dp * (w*dy1/dx1 + (1.0_dp - w)*dy/dx)
+      yc = yi(2) + dx1/2.0_dp * (wh*dy1/dx1 + (1.0_dp - wh)*dy/dx)
       t = (x - xi(2))/(dx1)
       y = (1.0_dp - t)**2 * yi(2) + 2.0_dp*t*(1.0_dp - t)*yc + t**2*yi(3)
     end if
 
   end subroutine bezier_interp
 
-end module ts_short_char_mod_parabolic
+end module ts_VIM_mod

@@ -46,9 +46,8 @@ OBJECTS = \
 	  ts_Heng_mod.o \
 		ts_short_char_mod_linear.o \
 		ts_short_char_mod_Bezier.o \
-		ts_Lewis_scatter_mod.o \
 		ts_disort_scatter_mod.o \
-    ts_Mendonca_mod.o \
+ 		ts_VIM_mod.o \
     FMS_RC.o
 
 # executable statement

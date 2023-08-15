@@ -1,6 +1,6 @@
 &FMS_RC_nml
 
-ts_scheme = 'Shortchar_linear'
+ts_scheme = 'VIM'
 opac_scheme = 'Freedman'
 adj_scheme = 'Ray_dry'
 
@@ -11,11 +11,11 @@ b_sh = 'Hybrid_sigma_grid_b_54.txt'
 pref = 1.0e8
 
 t_step = 60.0
-nstep = 1000000
+nstep = 100000
 Rd_air = 3556.8
 cp_air = 1.3e4
 grav = 10.0
-mu_z = 0.1
+mu_z = 0.577
 Tirr = 1000.0
 Tint = 100.0
 
