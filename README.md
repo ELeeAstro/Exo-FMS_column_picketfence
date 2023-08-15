@@ -66,7 +66,7 @@ ts_scheme: \
 'Shortchar_linear' - Short characteristics method with linear interpolants - four stream \
 'Shortchar_Bezier' - Short characteristics method with Bezier interpolants - four stream  \
 'Heng' - Heng et al. method \
-'Disort_scatter' - two-stream DISORT version with scattering
+'Disort_scatter' - two-stream DISORT version with scattering \
 'VIM' - Variational Iteration Method (VIM) - four stream
 
 opac_scheme: \
