@@ -185,25 +185,13 @@ contains
 
     !! modified co-albedo epsilon
     epsg(:) = sqrt((1.0_dp - w0(:))*(1.0_dp - hg(:)*w0(:)))
-    !! co-albedo
-    eps(:) = 1.0_dp - w0(:)
 
     !! Absorption/modified optical depth for transmission function
     dtau_eg(:) = epsg(:)*dtau(:)
-    dtau_e(:) = eps(:)*dtau(:)
 
     !! Efficency variables and loop
     do i = 1, nmu
       T_eg(i,:) = exp(-dtau_eg(:)/uarr(i)) ! eg Transmission function
-      T_e(i,:) = exp(-dtau_e(:)/uarr(i)) ! e Transmission function
-      T(i,:) = exp(-dtau(:)/uarr(i)) ! regular Transmission function
-      cp(i,:) = eps(:)/(uarr(i)*beta(:) + eps(:)) !c+
-      cm(i,:) =  eps(:)/(-(uarr(i))*beta(:) + eps(:)) !c-
-      wconst(i,:) = w0(:)/(real(nmu*2,dp)*(uarr(i))) !constant factor for scattering component
-      do j = 1, nmu
-        phip(i,j,:) = 1.0_dp + 3.0_dp*hg(:)*uarr(i)*uarr(j)   ! phi (net positive mu)
-        phim(i,j,:) = 1.0_dp + 3.0_dp*hg(:)*-(uarr(i))*uarr(j) ! phi (net negative mu)
-      end do
     end do
 
     !! Start loops to integrate in mu space
@@ -231,6 +219,51 @@ contains
       end do
 
     end do
+
+    !! If no scattering component in profile, then just find flux and return
+    !! no need to perform any scattering calculations
+    if (all(w0(:) <= 1.0e-3_dp)) then
+
+      ! Zero the total flux arrays
+      lw_up(:) = 0.0_dp
+      lw_down(:) = 0.0_dp
+
+      do i = 1, nmu
+        !! Sum up flux arrays with Gaussian quadrature weights and points for this mu stream
+        lw_down(:) = lw_down(:) + lw_down_g(i,:) * wuarr(i)
+        lw_up(:) = lw_up(:) + lw_up_g(i,:) * wuarr(i)
+      end do
+
+      !! The flux is the integrated intensity * 2pi
+      lw_down(:) = twopi * lw_down(:)
+      lw_up(:) = twopi * lw_up(:)
+
+      return
+
+    else
+
+      !! There is a scattering component
+      !! perform efficency calculations for scattering part
+
+      !! co-albedo
+      eps(:) = 1.0_dp - w0(:)
+
+      !! co-albedo optical depth    
+      dtau_e(:) = eps(:)*dtau(:)
+
+      do i = 1, nmu
+        T_e(i,:) = exp(-dtau_e(:)/uarr(i)) ! e Transmission function
+        T(i,:) = exp(-dtau(:)/uarr(i)) ! regular Transmission function
+        cp(i,:) = eps(:)/(uarr(i)*beta(:) + eps(:)) !c+
+        cm(i,:) =  eps(:)/(-(uarr(i))*beta(:) + eps(:)) !c-
+        wconst(i,:) = w0(:)/(real(nmu*2,dp)*(uarr(i))) !constant factor for scattering component
+        do j = 1, nmu
+          phip(i,j,:) = 1.0_dp + 3.0_dp*hg(:)*uarr(i)*uarr(j)   ! phi (net positive mu)
+          phim(i,j,:) = 1.0_dp + 3.0_dp*hg(:)*-(uarr(i))*uarr(j) ! phi (net negative mu)
+        end do
+      end do
+
+    end if
 
     !! Find Sp and Sm - it's now best to put mu into the inner loop
     ! Sp and Sm defined at lower level edges, zero upper boundary condition
@@ -336,7 +369,7 @@ contains
 
   end subroutine lw_VIM
 
- subroutine sw_adding(nlay, nlev, Finc, tau_Ve, mu_z, w_in, g_in, w_surf, sw_down, sw_up)
+  subroutine sw_adding(nlay, nlev, Finc, tau_Ve, mu_z, w_in, g_in, w_surf, sw_down, sw_up)
     implicit none
 
     !! Input variables
