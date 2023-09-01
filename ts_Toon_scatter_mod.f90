@@ -223,7 +223,7 @@ contains
       tau_IR(k+1) = tau_IR(k) + dtau(k)
     end do
 
-    alp(:) = sqrt((1.0_dp - w0(:))/1.0_dp - w0(:)*hg(:))
+    alp(:) = sqrt((1.0_dp - w0(:))/(1.0_dp - w0(:)*hg(:)))
     lam(:) = alp(:)*(1.0_dp-w0(:)*hg(:))/ubari
     gam(:) = (1.0_dp-alp(:))/(1.0_dp+alp(:))
     term(:) = ubari/(1.0_dp-w0(:)*hg(:))
@@ -476,7 +476,7 @@ contains
 
     lam(:) = sqrt(g1(:)**2 - g2(:)**2)
     gam(:) = (g1(:) - lam(:))/g2(:)
-    alp(:) = sqrt((1.0_dp - w0(:))/1.0_dp - w0(:)*hg(:))
+    alp(:) = sqrt((1.0_dp - w0(:))/(1.0_dp - w0(:)*hg(:)))
 
     denom(:) = lam(:)**2 - 1.0_dp/(mu_zm(:)**2)
     where (denom(:) == 0.0_dp)

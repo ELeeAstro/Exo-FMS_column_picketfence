@@ -174,7 +174,7 @@ program Exo_FMS_RC
   close(u)
 
   !! Time stepping loop
-  print*, 'Start timestepping'
+  print*, 'Start timestepping, using: ', trim(ts_scheme)
 
   t_tot = 0.0_dp
   inan = 0
