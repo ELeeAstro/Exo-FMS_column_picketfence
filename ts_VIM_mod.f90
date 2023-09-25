@@ -1,10 +1,10 @@
 !!!
-! Elspeth KH Lee - Aug 2023 : Initial version
-! sw: Adding layer method with scattering
-! lw: Variational Iteration Method (VIM) - Follows Zhang et al. (2017)
-!     Uses AA as an intial guess (zeroth order), then applies VIM to calculate the scattering component (1st order)
+! Elspeth KH Lee - Aug/Sep 2023 : Initial version
+! sw: alpha-4SDA - 4 stream analytic spherical harmonic method with doubling adding method (Zhang & Li 2013)
+! lw: Variational Iteration Method (alpha-4VIM) - Follows Zhang et al. (2017)
+!     Uses AA as an intial guess, then applies VIM to calculate the scattering component
 ! Pros: Very fast method with LW scattering approximation, no matrix inversions - better than AA alone
-! Cons: Still an approximation, (though quite great for a non-matrix method), technically not multiple scattering
+! Cons: Still an approximation (though quite good for a non-matrix method)
 !!!
 
 module ts_VIM_mod
@@ -125,7 +125,8 @@ contains
     do b = 1, 2
       be_b(:) = be(:) * Beta_IR(b)
       be_int_b = be_int * Beta_IR(b)
-      call lw_VIM(nlay, nlev, be_b, be_int_b, tau_IRe(:,b), lw_a(:,b), lw_g(:,b), lw_up_b(:,b), lw_down_b(:,b))
+      call lw_VIM(.False., nlay, nlev, be_b, be_int_b, tau_IRe(:,b), lw_a(:,b), lw_g(:,b), &
+        &  0.0_dp, lw_up_b(:,b), lw_down_b(:,b))
       lw_up(:) = lw_up(:) + lw_up_b(:,b)
       lw_down(:) = lw_down(:) + lw_down_b(:,b)
     end do
@@ -143,41 +144,61 @@ contains
 
   end subroutine ts_VIM
 
-  subroutine lw_VIM(nlay, nlev, be, be_int, tau_IRe, ww, gg, lw_up, lw_down)
+  subroutine lw_VIM(surf, nlay, nlev, be, be_int, tau_IRe, ww, gg, lw_a_surf, lw_up, lw_down)
     implicit none
 
     !! Input variables
+    logical, intent(in) :: surf 
     integer, intent(in) :: nlay, nlev
     real(dp), dimension(nlev), intent(in) :: be, tau_IRe
     real(dp), dimension(nlay), intent(in) :: ww, gg
-    real(dp), intent(in) :: be_int
+    real(dp), intent(in) :: be_int, lw_a_surf
 
     !! Output variables
     real(dp), dimension(nlev), intent(out) :: lw_up, lw_down
 
     !! Work variables and arrays
     integer :: k, i, j
-    real(dp), dimension(nlay) :: w0, hg
+    real(dp), dimension(nlay) :: w0, hg, fc
     real(dp), dimension(nlay) :: dtau, beta, epsg, eps, dtau_eg, dtau_e
     real(dp), dimension(nmu, nlev) :: lw_up_g, lw_down_g
-    real(dp), dimension(nmu, nlay) :: T_eg, T_e, T, cp, cm, wconst
-    real(dp), dimension(nmu, nmu, nlay) :: Sp, Sm, phip, phim
+    real(dp), dimension(nmu, nlay) :: T_eg, T_e, T, cp, cm, wconst, Sp, Sm
+    real(dp), dimension(nmu, nmu, nlay) :: Spij, Smij
+    real(dp), dimension(nmu, nmu, nlay) :: phip, phim
 
     real(dp) :: bp, bm, dpp, dm, zepp, zemm, zepm, zemp
-    real(dp) :: first, second, third
+    real(dp) :: first, second
 
+    real(dp), dimension(nlay) :: sigma_sq, pmom2, c
+    integer, parameter :: nstr = nmu*2
     
     !! Calculate dtau in each layer
     dtau(:) = tau_IRe(2:) - tau_IRe(1:nlay)
 
-    !! Delta eddington scaling
-    w0(:) = (1.0_dp - gg(:)**2)*ww(:)/(1.0_dp-ww(:)*gg(:)**2)
-    dtau(:) = (1.0_dp-ww(:)*gg(:)**2)*dtau(:)
-    hg(:) = gg(:)/(1.0_dp + gg(:))
+    !! Delta-M+ scaling (Following DISORT: Lin et al. 2018)
+    !! Assume HG phase function for scaling
+    fc(:) = gg(:)**(nstr)
+    pmom2(:) = gg(:)**(nstr+1)
+
+    where (fc(:) /=  pmom2(:))
+      sigma_sq(:) = real((nstr+1)**2 - nstr**2,dp) / &
+      & ( log(fc(:)**2/pmom2(:)**2) )
+      c(:) = exp(real(nstr**2,dp)/(2.0_dp*sigma_sq(:)))
+      fc(:) = c(:)*fc(:)
+
+      w0(:) = ww(:)*((1.0_dp - fc(:))/(1.0_dp - fc(:)*ww(:)))
+      dtau(:) = (1.0_dp - ww(:)*fc(:))*dtau(:)
+
+    elsewhere
+      w0(:) = ww(:)
+      fc(:) = 0.0_dp
+    end where
+
+    hg(:) = gg(:)
 
     !! Log B with tau function
     do k = 1, nlay
-      if (dtau(k) < 1.0e-8_dp) then
+      if (dtau(k) < 1.0e-9_dp) then
         ! Too low optical depth for numerical stability, Bln = 0
         beta(k) = 0.0_dp
       else
@@ -188,6 +209,7 @@ contains
 
     !! modified co-albedo epsilon
     epsg(:) = sqrt((1.0_dp - w0(:))*(1.0_dp - hg(:)*w0(:)))
+    !epsg(:) = (1.0_dp - w0(:))
 
     !! Absorption/modified optical depth for transmission function
     dtau_eg(:) = epsg(:)*dtau(:)
@@ -211,10 +233,16 @@ contains
       end do
 
       !! Perform upward loop
-      ! Lower boundary condition - internal heat definition Fint = F_down - F_up
-      ! here the lw_a_surf is assumed to be = 1 as per the definition
-      ! here we use the same condition but use intensity units to be consistent
-      lw_up_g(i,nlev) = lw_down_g(i,nlev) + be_int
+      if (surf .eqv. .True.) then
+        ! Surface boundary condition given by surface temperature + reflected longwave radiaiton
+        lw_up_g(i,nlev) = lw_down_g(i,nlev)*lw_a_surf + (1.0_dp - lw_a_surf)*be_int
+      else
+        ! Lower boundary condition - internal heat definition Fint = F_down - F_up
+        ! here the lw_a_surf is assumed to be = 1 as per the definition
+        ! here we use the same condition but use intensity units to be consistent
+        lw_up_g(i,nlev) = lw_down_g(i,nlev) + be_int
+      end if
+
       do k = nlay, 1, -1
         !! Upward AA sweep
         lw_up_g(i,k) = lw_up_g(i,k+1)*T_eg(i,k) + &
@@ -225,7 +253,7 @@ contains
 
     !! If no scattering component in profile, then just find flux and return
     !! no need to perform any scattering calculations
-    if (all(w0(:) <= 1.0e-3_dp)) then
+    if (all(w0(:) <= 1.0e-6_dp)) then
 
       ! Zero the total flux arrays
       lw_up(:) = 0.0_dp
@@ -243,39 +271,48 @@ contains
 
       return
 
-    else
-
-      !! There is a scattering component
-      !! perform efficency calculations for scattering part
-
-      !! co-albedo
-      eps(:) = 1.0_dp - w0(:)
-
-      !! co-albedo optical depth    
-      dtau_e(:) = eps(:)*dtau(:)
-
-      do i = 1, nmu
-        T_e(i,:) = exp(-dtau_e(:)/uarr(i)) ! e Transmission function
-        T(i,:) = exp(-dtau(:)/uarr(i)) ! regular Transmission function
-        cp(i,:) = eps(:)/(uarr(i)*beta(:) + eps(:)) !c+
-        cm(i,:) =  eps(:)/(-(uarr(i))*beta(:) + eps(:)) !c-
-        wconst(i,:) = w0(:)/(real(nmu*2,dp)*(uarr(i))) !constant factor for scattering component
-        do j = 1, nmu
-          phip(i,j,:) = 1.0_dp + 3.0_dp*hg(:)*uarr(i)*uarr(j)   ! phi (net positive mu)
-          phim(i,j,:) = 1.0_dp + 3.0_dp*hg(:)*-(uarr(i))*uarr(j) ! phi (net negative mu)
-        end do
-      end do
-
     end if
+
+    !! There is a scattering component, calculate the Sp and Sm
 
     !! Find Sp and Sm - it's now best to put mu into the inner loop
     ! Sp and Sm defined at lower level edges, zero upper boundary condition
     do k = 1, nlay
-      if (w0(k) <= 1.0e-3_dp) then
-         Sp(:,:,k) = 0.0_dp
-         Sm(:,:,k) = 0.0_dp
+
+      !! Set Sp and Sm to 0
+      Sp(:,k) = 0.0_dp
+      Sm(:,k) = 0.0_dp
+
+      !! Efficency transmission function calcualtion
+      do i = 1, nmu
+        T(i,k) = exp(-dtau(k)/uarr(i)) ! regular Transmission function
+      end do
+
+      !! co-albedo
+      eps(k) = 1.0_dp - w0(k)
+
+      ! Cycle if no scattering component
+      if (w0(k) <= 1.0e-6_dp) then
         cycle
       end if
+
+      !! Efficency variables
+
+      !! co-albedo optical depth    
+      dtau_e(k) = eps(k)*dtau(k)
+
+      do i = 1, nmu
+        T_e(i,k) = exp(-dtau_e(k)/uarr(i)) ! e Transmission function
+        cp(i,k) = eps(k)/(uarr(i)*beta(k) + eps(k)) !c+
+        cm(i,k) = eps(k)/(-(uarr(i))*beta(k) + eps(k)) !c-
+        wconst(i,k) = w0(k)/(real(nmu*2,dp)*(uarr(i))) !constant factor for scattering component
+        do j = 1, nmu
+          phip(i,j,k) = 1.0_dp + 3.0_dp*hg(k)*uarr(i)*uarr(j)   ! phi (net positive mu)
+          phim(i,j,k) = 1.0_dp + 3.0_dp*hg(k)*-(uarr(i))*uarr(j) ! phi (net negative mu)
+        end do
+      end do
+
+      !! Main scattering source function loop
       do i = 1, nmu
         do j = 1, nmu
 
@@ -291,18 +328,34 @@ contains
           second = phim(i,j,k) * zepp * (lw_up_g(j,k+1) - be(k+1)*cp(j,k)) * &
             & (T_e(j,k) - T(i,k))
 
-          Sp(i,j,k) = first + second
+          Spij(i,j,k) = first + second
 
           first = phip(i,j,k) * zemp * (lw_up_g(j,k+1) - be(k+1)*cp(j,k)) * &
             & (1.0_dp - exp(-dtau(k)/zemp))
           second = phim(i,j,k) * zemm * (lw_down_g(j,k) - be(k)*cm(j,k)) * &
             & (T_e(j,k) - T(i,k))
 
-          Sm(i,j,k) = first + second
+          Smij(i,j,k) = first + second
 
         end do
       end do
+
+      !! Sum up the j Sp/Sm to get the scattering source function
+      do i = 1, nmu
+        bp = uarr(i)/(uarr(i)*beta(k) + 1.0_dp)
+        bm = -(uarr(i))/(-(uarr(i))*beta(k) + 1.0_dp)
+        do j = 1, nmu
+          Sp(i,k) = Sp(i,k) + &
+            & (Spij(i,j,k) - bp*(cp(j,k)*phip(i,j,k) + cm(j,k)*phim(i,j,k))*(be(k+1)*T(i,k) - be(k)))          
+          Sm(i,k) = Sm(i,k) + &
+            & (Smij(i,j,k) - bm*(cp(j,k)*phim(i,j,k) + cm(j,k)*phip(i,j,k))*(be(k+1) - be(k)*T(i,k)))
+        end do
+        Sp(i,k) = wconst(i,k)*Sp(i,k)
+        Sm(i,k) = wconst(i,k)*Sm(i,k)
+      end do
+
     end do
+
 
     ! Zero the total flux arrays
     lw_up(:) = 0.0_dp
@@ -321,42 +374,27 @@ contains
         dm = eps(k)/(-(uarr(i))*beta(k) + 1.0_dp)
 
         lw_down_g(i,k+1) = lw_down_g(i,k)*T(i,k) + &
-          & dm*(be(k+1) - be(k)*T(i,k))
-
-        bm = -(uarr(i))/(-(uarr(i))*beta(k) + 1.0_dp)
-
-        third = 0.0_dp
-        do j = 1, nmu
-          third = third + &
-            & (Sm(i,j,k) - bm*(cp(j,k)*phim(i,j,k) + cm(j,k)*phip(i,j,k))*(be(k+1) - be(k)*T(i,k)))
-        end do
-
-        lw_down_g(i,k+1) = lw_down_g(i,k+1) + wconst(i,k)*third
+          & dm*(be(k+1) - be(k)*T(i,k)) + Sm(i,k)
 
       end do
 
       !! Perform upward loop
-      ! Lower boundary condition - internal heat definition Fint = F_down - F_up
-      ! here the lw_a_surf is assumed to be = 1 as per the definition
-      ! here we use the same condition but use intensity units to be consistent
-      lw_up_g(i,nlev) = lw_down_g(i,nlev) + be_int
+      if (surf .eqv. .True.) then
+        ! Surface boundary condition given by surface temperature + reflected longwave radiaiton
+        lw_up_g(i,nlev) = lw_down_g(i,nlev)*lw_a_surf + (1.0_dp - lw_a_surf)*be_int
+      else
+        ! Lower boundary condition - internal heat definition Fint = F_down - F_up
+        ! here the lw_a_surf is assumed to be = 1 as per the definition
+        ! here we use the same condition but use intensity units to be consistent
+        lw_up_g(i,nlev) = lw_down_g(i,nlev) + be_int
+      end if
 
       do k = nlay, 1, -1
 
         dpp = eps(k)/(uarr(i)*beta(k) + 1.0_dp)
 
         lw_up_g(i,k) = lw_up_g(i,k+1)*T(i,k) - &
-          & dpp*(be(k+1)*T(i,k) - be(k))
-
-        bp = uarr(i)/(uarr(i)*beta(k) + 1.0_dp)  
-
-        third = 0.0_dp
-        do j = 1, nmu
-          third = third + &
-            & (Sp(i,j,k) - bp*(cp(j,k)*phip(i,j,k) + cm(j,k)*phim(i,j,k))*(be(k+1)*T(i,k) - be(k)))
-        end do
-
-        lw_up_g(i,k) = lw_up_g(i,k) + wconst(i,k)*third
+          & dpp*(be(k+1)*T(i,k) - be(k)) + Sp(i,k)
 
       end do
 

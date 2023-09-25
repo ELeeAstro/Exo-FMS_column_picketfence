@@ -16,7 +16,7 @@ program Exo_FMS_RC
   use ts_isothermal_2_mod, only : ts_isothermal_2
   use ts_Toon_mod, only : ts_Toon
   use ts_Toon_scatter_mod, only : ts_Toon_scatter
-  use ts_Heng_mod, only : ts_Heng
+  use ts_Heng_ITS_mod, only : ts_Heng_ITS
   use ts_short_char_mod_linear, only : ts_short_char_linear
   use ts_short_char_mod_Bezier, only : ts_short_char_Bezier
   use ts_disort_scatter_mod, only : ts_disort_scatter
@@ -295,13 +295,10 @@ program Exo_FMS_RC
       ! Short characteristics method without IR scattering
       call ts_short_char_Bezier(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z_eff, F0, Tint, AB, Beta_V, Beta_IR, &
       & sw_a, sw_g, 0.0_dp, net_F, olr, asr)
-    case('Heng')
-      ! Heng flux method without IR scattering
-      do b = 1, 2
-        tau_IRl(:,b) = (tau_IRe(1:nlay,b) + tau_IRe(2:nlev,b)) / 2.0_dp
-      end do
-      call ts_Heng(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, tau_IRl, mu_z_eff, F0, Tint, AB, Beta_V, Beta_IR, &
-      & sw_a, sw_g, 0.0_dp, net_F, olr, asr)
+    case('Heng_ITS')
+      ! Heng improved ts method
+      ! call ts_Heng_ITS(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, tau_IRl, mu_z_eff, F0, Tint, AB, Beta_V, Beta_IR, &
+      ! & sw_a, sw_g, 0.0_dp, net_F, olr, asr)
     case('Disort_scatter')
       call ts_disort_scatter(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB,  Beta_V, Beta_IR, &
       & sw_a, sw_g, lw_a, lw_g, net_F, olr, asr)
