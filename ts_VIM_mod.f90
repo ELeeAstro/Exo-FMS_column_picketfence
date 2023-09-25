@@ -410,7 +410,7 @@ contains
 
   end subroutine lw_VIM
 
-  subroutine sw_SDA(nlay, nlev, Finc, tau_Ve, mu_z, ww, gg, w_surf, sw_down, sw_up)
+   subroutine sw_SDA(nlay, nlev, Finc, tau_Ve, mu_z, ww, gg, w_surf, sw_down, sw_up)
     implicit none
 
     !! Input variables
@@ -675,10 +675,8 @@ contains
     !! We now have the transmission and reflection coefficents for both the direct and diffuse components
     !! Now we perform the doubling-adding method accros multiple layers
 
-    !! Here we directly copy the code from J. Li 
-    !! we can probably make an improvement on this at some point through vectorisation
-
     !! Do boundary conditons first
+
     ! Upper
     T1k(1,:) = 0.0_dp
     Rst1k(1,:,:) = 0.0_dp
