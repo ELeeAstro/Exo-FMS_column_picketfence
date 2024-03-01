@@ -34,7 +34,6 @@ LFLAGS    = $(FFLAGS)
 
 
 OBJECTS = \
-	  toms715.o \
 	  call_twostr.o \
 	  k_Rosseland_mod.o \
 	  IC_mod.o \
@@ -43,21 +42,21 @@ OBJECTS = \
 	  ts_isothermal_2_mod.o \
 	  ts_Toon_mod.o \
 		ts_Toon_scatter_mod.o \
-	  ts_Heng_ITS_mod.o \
 		ts_short_char_mod_linear.o \
-		ts_short_char_mod_Bezier.o \
-		ts_disort_scatter_mod.o \
- 		ts_VIM_mod.o \
-    FMS_RC.o
+    ts_disort_scatter_mod.o \
+    ts_AA_E_mod.o \
+    ts_AA_L_mod.o \
+		ts_VIM_mod.o \
+		FMS_RC.o
 
 # executable statement
-EXECS  = FMS_RC
+EXECS  = ../FMS_RC_picketfence
 
 .SUFFIXES: .o .f90 .F
 
-default: FMS_RC
+default: FMS_RC_picketfence
 
-FMS_RC:  $(OBJECTS)
+FMS_RC_picketfence:  $(OBJECTS)
 	 $(F90LINKER) $(LFLAGS) $(OBJECTS) -o $(EXECS)
 
 clean:

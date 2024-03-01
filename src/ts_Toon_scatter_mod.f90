@@ -67,7 +67,7 @@ module ts_Toon_scatter_mod
 contains
 
   subroutine ts_Toon_scatter(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, Beta_V, Beta_IR, &
-    & sw_a, sw_g, lw_a, lw_g,  sw_a_surf, lw_a_surf, net_F, olr, asr)
+    & sw_a, sw_g, lw_a, lw_g, sw_a_surf, lw_a_surf, net_F, olr, asr)
     implicit none
 
     !! Input variables

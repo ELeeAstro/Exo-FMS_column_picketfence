@@ -16,10 +16,10 @@ program Exo_FMS_RC
   use ts_isothermal_2_mod, only : ts_isothermal_2
   use ts_Toon_mod, only : ts_Toon
   use ts_Toon_scatter_mod, only : ts_Toon_scatter
-  use ts_Heng_ITS_mod, only : ts_Heng_ITS
   use ts_short_char_mod_linear, only : ts_short_char_linear
-  use ts_short_char_mod_Bezier, only : ts_short_char_Bezier
   use ts_disort_scatter_mod, only : ts_disort_scatter
+  use ts_AA_E_mod, only : ts_AA_E
+  use ts_AA_L_mod, only : ts_AA_L
   use ts_VIM_mod, only : ts_VIM
   use k_Rosseland_mod, only : k_Ross_Freedman, k_Ross_Valencia, gam_Parmentier, Bond_Parmentier
   use IC_mod, only : IC_profile
@@ -33,7 +33,7 @@ program Exo_FMS_RC
   ! Constants
   real(dp), parameter :: sb = 5.670374419e-8_dp
 
-  integer :: n, i, k, u, j, b, inan
+  integer :: n, i, k, u, j, inan
   integer :: nstep, nlay, nlev
   integer :: table_num
   real(dp) :: t_step, t_tot
@@ -291,17 +291,17 @@ program Exo_FMS_RC
       ! Short characteristics method without IR scattering
       call ts_short_char_linear(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z_eff, F0, Tint, AB, Beta_V, Beta_IR, &
       & sw_a, sw_g, 0.0_dp, net_F, olr, asr)
-    case('Shortchar_Bezier')
-      ! Short characteristics method without IR scattering
-      call ts_short_char_Bezier(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z_eff, F0, Tint, AB, Beta_V, Beta_IR, &
-      & sw_a, sw_g, 0.0_dp, net_F, olr, asr)
-    case('Heng_ITS')
-      ! Heng improved ts method
-      ! call ts_Heng_ITS(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, tau_IRl, mu_z_eff, F0, Tint, AB, Beta_V, Beta_IR, &
-      ! & sw_a, sw_g, 0.0_dp, net_F, olr, asr)
     case('Disort_scatter')
       call ts_disort_scatter(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB,  Beta_V, Beta_IR, &
       & sw_a, sw_g, lw_a, lw_g, net_F, olr, asr)
+    case('AA_E')
+      ! Absorption approximation method (exponential)
+      call ts_AA_E(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z_eff, F0, Tint, AB, Beta_V, Beta_IR, &
+      & sw_a, sw_g, lw_a, lw_g, 0.0_dp, 0.0_dp, net_F, olr, asr)      
+     case('AA_L')
+      ! Absorption approximation method (linear)
+      call ts_AA_L(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z_eff, F0, Tint, AB, Beta_V, Beta_IR, &
+      & sw_a, sw_g, lw_a, lw_g, 0.0_dp, 0.0_dp, net_F, olr, asr)
     case('VIM')
       ! Variational Iteration Method with analytical LW scattering
       call ts_VIM(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z_eff, F0, Tint, AB, Beta_V, Beta_IR, &

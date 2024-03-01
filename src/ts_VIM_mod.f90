@@ -197,15 +197,11 @@ contains
     hg(:) = gg(:)
 
     !! Log B with tau function
-    do k = 1, nlay
-      if (dtau(k) < 1.0e-9_dp) then
-        ! Too low optical depth for numerical stability, Bln = 0
-        beta(k) = 0.0_dp
-      else
-        ! Log B with tau value
-        beta(k) = -log(be(k+1)/be(k))/dtau(k)
-      end if
-    end do
+    where (dtau(:) < 1.0e-9_dp)
+      beta(:) = 0.0_dp
+    elsewhere
+      beta(:) = -log(be(2:nlev)/be(1:nlay))/dtau(:)
+    end where
 
     !! modified co-albedo epsilon
     epsg(:) = sqrt((1.0_dp - w0(:))*(1.0_dp - hg(:)*w0(:)))
@@ -410,7 +406,7 @@ contains
 
   end subroutine lw_VIM
 
-   subroutine sw_SDA(nlay, nlev, Finc, tau_Ve, mu_z, ww, gg, w_surf, sw_down, sw_up)
+  subroutine sw_SDA(nlay, nlev, Finc, tau_Ve, mu_z, ww, gg, w_surf, sw_down, sw_up)
     implicit none
 
     !! Input variables
