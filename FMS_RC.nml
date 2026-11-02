@@ -1,8 +1,9 @@
 &FMS_RC_nml
 
-ts_scheme = 'AA_E'
+sw_scheme = 'sw_adding'
+lw_scheme = 'lw_Toon89'
 opac_scheme = 'Freedman'
-adj_scheme = 'Ray_dry'
+adj_scheme = 'Manabe'
 
 nlay = 54
 a_sh = 'hybrid_sigma/Hybrid_sigma_grid_a_54.txt'
@@ -25,7 +26,7 @@ AB = 0.0
 fl = 1.0
 met = 0.0
 
-Bezier = .True.
+use_bond_fit = .True.
 
 sw_ac = 0.0, 0.0, 0.0
 sw_gc = 0.0, 0.0, 0.0
@@ -39,5 +40,7 @@ radius = 7.1492e7
 iIC = 4
 corr = .True.
 table_num = 1
+Tdeep_init = 2000.0
+Tstrat_init = 500.0
 
 /

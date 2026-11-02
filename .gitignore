@@ -30,3 +30,7 @@
 *.exe
 *.out
 *.app
+
+# Column executable and Python caches
+/FMS_RC_picketfence
+__pycache__/

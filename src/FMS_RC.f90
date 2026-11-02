@@ -2,7 +2,7 @@
 ! Elspeth KH Lee - May 2021
 ! A simple program that emulates a column inside the Exo-FMS GCM
 ! This is useful for testing different RT solutions
-! This version is for semi-grey radiation only
+! This version uses three visible and two infrared picket-fence bands
 !
 ! Input parameters are set via the namelist (FMS_RC.nml) - hopefully paramaters are
 ! somewhat self explanatory. See the github readme for more information.
@@ -12,18 +12,12 @@
 
 program Exo_FMS_RC
   use, intrinsic :: iso_fortran_env
-  use ts_isothermal_mod, only : ts_isothermal
-  use ts_isothermal_2_mod, only : ts_isothermal_2
-  use ts_Toon_mod, only : ts_Toon
-  use ts_Toon_scatter_mod, only : ts_Toon_scatter
-  use ts_short_char_mod_linear, only : ts_short_char_linear
-  use ts_disort_scatter_mod, only : ts_disort_scatter
-  use ts_AA_E_mod, only : ts_AA_E
-  use ts_AA_L_mod, only : ts_AA_L
-  use ts_VIM_mod, only : ts_VIM
+  use picket_radiation_mod, only: solve_sw_band, solve_lw_band
+  use Manabe_dry_adjust_mod, only: Manabe_dry_adjust
+  use Pierrehumbert_dry_adjust_mod, only: Pierrehumbert_dry_adjust
+  use MLT_mod, only: MLT
   use k_Rosseland_mod, only : k_Ross_Freedman, k_Ross_Valencia, gam_Parmentier, Bond_Parmentier
   use IC_mod, only : IC_profile
-  use dry_conv_adj_mod, only : Ray_dry_adj
   use ieee_arithmetic
   implicit none
 
@@ -33,7 +27,7 @@ program Exo_FMS_RC
   ! Constants
   real(dp), parameter :: sb = 5.670374419e-8_dp
 
-  integer :: n, i, k, u, j, inan
+  integer :: n, i, k, u, j, ib
   integer :: nstep, nlay, nlev
   integer :: table_num
   real(dp) :: t_step, t_tot
@@ -42,7 +36,7 @@ program Exo_FMS_RC
   real(dp), allocatable, dimension(:) :: Tl, pl, pe, dpe
   real(dp), allocatable, dimension(:) :: Beta_V, Beta_IR, gam_V
   real(dp), allocatable, dimension(:,:) :: k_Vl, k_IRl
-  real(dp), allocatable, dimension(:,:) :: tau_Ve, tau_IRe, tau_IRl
+  real(dp), allocatable, dimension(:,:) :: tau_Ve, tau_IRe
   real(dp), allocatable, dimension(:) :: dT_rad, dT_conv, net_F
 
   real(dp), allocatable, dimension(:,:) :: sw_a, sw_g, lw_a, lw_g
@@ -53,7 +47,13 @@ program Exo_FMS_RC
   real(dp), allocatable, dimension(:) :: mu_z_eff, alt, alp
 
   real(dp) :: cp_air, grav, k_IR, k_V, kappa_air, Rd_air
-  real(dp) :: olr, asr
+  real(dp) :: olr, asr, band_olr, band_asr, Finc
+  real(dp), allocatable :: sw_up(:), sw_down(:), sw_net(:), lw_up(:), lw_down(:), lw_net(:)
+  real(dp), allocatable :: band_up(:), band_down(:), band_net(:)
+  real(dp), allocatable :: sw_up_band(:,:), sw_down_band(:,:), sw_net_band(:,:)
+  real(dp), allocatable :: lw_up_band(:,:), lw_down_band(:,:), lw_net_band(:,:)
+  real(dp), allocatable :: Tl_rad(:), Kzz(:), Kzz_e(:), Rd_bar(:), cp_bar(:)
+  logical :: use_bond_fit = .true.
 
   real(dp), dimension(3) :: sw_ac, sw_gc
   real(dp), dimension(2) :: lw_ac, lw_gc
@@ -61,29 +61,32 @@ program Exo_FMS_RC
   integer :: iIC
   logical :: corr
   real(dp) :: prc
+  real(dp) :: Tdeep_init = 2000.0_dp, Tstrat_init = 500.0_dp
 
   real(dp) :: fl, AB
 
   integer :: ua, ub
-  character(len=50) :: a_sh, b_sh
+  character(len=1024) :: a_sh, b_sh
   real(dp), allocatable, dimension(:) :: a_hs, b_hs
 
   real(dp) :: start, finish
 
-  character(len=50) :: ts_scheme, opac_scheme, adj_scheme
+  character(len=50) :: sw_scheme = 'sw_adding', lw_scheme = 'lw_Toon89', opac_scheme, adj_scheme
 
   integer :: u_nml
 
-  logical :: Bezier
 
-  namelist /FMS_RC_nml/ ts_scheme, opac_scheme, adj_scheme, nlay, a_sh, b_sh, pref, &
+  namelist /FMS_RC_nml/ sw_scheme, lw_scheme, opac_scheme, adj_scheme, nlay, a_sh, b_sh, pref, &
           & t_step, nstep, Rd_air, cp_air, grav, mu_z, Tirr, Tint, k_V, k_IR, AB, fl, met, &
-          & iIC, corr, table_num, sw_ac, sw_gc, lw_ac, lw_gc, Bezier, zcorr, zcorr_meth, radius
+          & iIC, corr, table_num, sw_ac, sw_gc, lw_ac, lw_gc, zcorr, zcorr_meth, radius, use_bond_fit, Tdeep_init, Tstrat_init
 
   !! Read input variables from namelist
   open(newunit=u_nml, file='FMS_RC.nml', status='old', action='read')
   read(u_nml, nml=FMS_RC_nml)
   close(u_nml)
+
+  if (nlay < 3) error stop 'WENO interpolation requires at least three layers'
+  if (nstep < 0 .or. t_step <= 0.0_dp) error stop 'Require nstep >= 0 and t_step > 0'
 
   !! Number of layer edges (levels)
   nlev = nlay + 1
@@ -119,9 +122,22 @@ program Exo_FMS_RC
   allocate(Beta_V(3), Beta_IR(2), gam_V(3))
   allocate(alt(nlev), mu_z_eff(nlev), alp(nlev))
 
-  if (ts_scheme == 'Heng') then
-    allocate(tau_IRl(nlay,2))
-  end if
+  allocate(sw_up(nlev), sw_down(nlev), sw_net(nlev), lw_up(nlev), lw_down(nlev), lw_net(nlev))
+  allocate(band_up(nlev), band_down(nlev), band_net(nlev))
+  allocate(sw_up_band(nlev,3), sw_down_band(nlev,3), sw_net_band(nlev,3))
+  allocate(lw_up_band(nlev,2), lw_down_band(nlev,2), lw_net_band(nlev,2))
+  allocate(Tl_rad(nlay), Kzz(nlay), Kzz_e(nlev), Rd_bar(nlay), cp_bar(nlay))
+  dT_rad = 0.0_dp
+  dT_conv = 0.0_dp
+  net_F = 0.0_dp
+  tau_Ve = 0.0_dp
+  tau_IRe = 0.0_dp
+  sw_up = 0.0_dp; sw_down = 0.0_dp; sw_net = 0.0_dp
+  lw_up = 0.0_dp; lw_down = 0.0_dp; lw_net = 0.0_dp
+  sw_up_band = 0.0_dp; sw_down_band = 0.0_dp; sw_net_band = 0.0_dp
+  lw_up_band = 0.0_dp; lw_down_band = 0.0_dp; lw_net_band = 0.0_dp
+  Kzz = 0.0_dp
+  asr = 0.0_dp; olr = 0.0_dp
 
   ! Allocate cloud properties (constant all layers for now)
   allocate(sw_a(nlay,3), sw_g(nlay,3), lw_a(nlay,2), lw_g(nlay,2))
@@ -132,6 +148,8 @@ program Exo_FMS_RC
 
   !! Calculate the adiabatic coefficent
   kappa_air = Rd_air/cp_air   ! kappa = Rd/cp
+  Rd_bar = Rd_air
+  cp_bar = cp_air
 
   F0 = sb * Tirr**4 ! Substellar point irradiation flux
   Fint = sb * Tint**4 ! Internal flux
@@ -141,17 +159,20 @@ program Exo_FMS_RC
   print*, '--------------'
 
   ! Semi-grey atmosphere values (here they are not used, but just need to be passed to IC routine)
-  k_Vl(:,1) = k_V
-  k_IRl(:,1) = k_IR
+  k_Vl(:,:) = k_V
+  k_IRl(:,:) = k_IR
 
   !! Initial condition T-p profile - see the routine for options
-  call IC_profile(iIC,corr,nlay,pref,pl,k_Vl(:,1),k_IRl(:,1),Tint,mu_z,Tirr,grav,fl,Tl,prc,table_num,met)
+  call IC_profile(iIC,corr,nlay,pref,pl,k_Vl(:,1),k_IRl(:,1),Tint,mu_z,Tirr,grav,fl,Tl,prc,table_num,met, &
+    & Tdeep_init,Tstrat_init,kappa_air)
 
   !! Parmentier opacity profile parameters - first get Bond albedo
   Teff = (Tint**4 + (1.0_dp/sqrt(3.0_dp)) * Tirr**4)**(0.25_dp)
-  call Bond_Parmentier(Teff, grav,  AB)
+  if (use_bond_fit) call Bond_Parmentier(Teff, grav, AB)
+  if (AB < 0.0_dp .or. AB >= 1.0_dp) error stop 'AB must be in [0,1)'
+  Finc = (1.0_dp - AB) * F0
   !! Recalculate Teff and then find parameters
-  Teff = (Tint**4 + (1.0_dp - AB) * mu_z * Tirr**4)**(0.25_dp)
+  Teff = (Tint**4 + (1.0_dp - AB) * max(0.0_dp,mu_z) * Tirr**4)**(0.25_dp)
   call gam_Parmentier(Teff, table_num, gam_V, Beta_V, Beta_IR, gam_1, gam_2, gam_P, tau_lim)
 
   !! Print variables from Parmentier non-grey scheme
@@ -167,17 +188,17 @@ program Exo_FMS_RC
 
 
   !! Write out initial conditions
-  open(newunit=u,file='FMS_RC_ic.out',action='readwrite')
+  open(newunit=u,file='FMS_RC_ic.out',status='replace',action='write')
   do i = 1, nlay
     write(u,*) i, pl(i), Tl(i)
   end do
   close(u)
 
   !! Time stepping loop
-  print*, 'Start timestepping, using: ', trim(ts_scheme)
+  print*, 'Start timestepping, using: ', trim(sw_scheme), ' + ', trim(lw_scheme)
 
   t_tot = 0.0_dp
-  inan = 0
+  n = 0
 
   !! cpu timer start
   call cpu_time(start)
@@ -239,7 +260,7 @@ program Exo_FMS_RC
     end select
 
 
-    if (zcorr .eqv. .True. .and. mu_z > 0.0_dp) then
+    if (zcorr .and. mu_z > 0.0_dp) then
       ! First calculate the altitude at each level from the hypsometric equation
       ! Assume constant gravity for simplicity
       alt(nlev) = 0.0_dp
@@ -269,48 +290,37 @@ program Exo_FMS_RC
       mu_z_eff(:) = mu_z
     end if
 
-    !! Two stream radiative transfer step
-    select case(ts_scheme)
-    case('Isothermal')
-      ! Isothermal layers approximation
-      call ts_isothermal(nlay, nlev, Tl, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, Beta_V, Beta_IR, &
-      & sw_a, sw_g, 0.0_dp, net_F, olr, asr)
-    case('Isothermal_2')
-      ! Isothermal layers approximation - first order fix for high optical depths
-      call ts_isothermal_2(nlay, nlev, Tl, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, Beta_V, Beta_IR, &
-      & sw_a, sw_g, 0.0_dp, net_F, olr, asr)
-    case('Toon')
-      ! Toon method without IR scattering
-      call ts_Toon(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z_eff, F0, Tint, AB, Beta_V, Beta_IR, &
-      & sw_a, sw_g, 0.0_dp, net_F, olr, asr)
-    case('Toon_scatter')
-      ! Toon method with scattering
-      call ts_Toon_scatter(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z_eff, F0, Tint, AB, Beta_V, Beta_IR, &
-      & sw_a, sw_g, lw_a, lw_g, 0.0_dp, 0.0_dp, net_F, olr, asr)
-    case('Shortchar_linear')
-      ! Short characteristics method without IR scattering
-      call ts_short_char_linear(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z_eff, F0, Tint, AB, Beta_V, Beta_IR, &
-      & sw_a, sw_g, 0.0_dp, net_F, olr, asr)
-    case('Disort_scatter')
-      call ts_disort_scatter(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB,  Beta_V, Beta_IR, &
-      & sw_a, sw_g, lw_a, lw_g, net_F, olr, asr)
-    case('AA_E')
-      ! Absorption approximation method (exponential)
-      call ts_AA_E(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z_eff, F0, Tint, AB, Beta_V, Beta_IR, &
-      & sw_a, sw_g, lw_a, lw_g, 0.0_dp, 0.0_dp, net_F, olr, asr)      
-     case('AA_L')
-      ! Absorption approximation method (linear)
-      call ts_AA_L(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z_eff, F0, Tint, AB, Beta_V, Beta_IR, &
-      & sw_a, sw_g, lw_a, lw_g, 0.0_dp, 0.0_dp, net_F, olr, asr)
-    case('VIM')
-      ! Variational Iteration Method with analytical LW scattering
-      call ts_VIM(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z_eff, F0, Tint, AB, Beta_V, Beta_IR, &
-      & sw_a, sw_g, lw_a, lw_g, 0.0_dp, net_F, olr, asr)      
-    case('None')
-    case default
-      print*, 'Invalid ts_scheme: ', trim(ts_scheme)
-      stop
-    end select
+    !! Independent shortwave solves: the incident stellar flux is split once.
+    do ib = 1, 3
+      call solve_sw_band(sw_scheme, nlay, nlev, tau_Ve(:,ib), mu_z_eff, Finc*Beta_V(ib), &
+        & sw_a(:,ib), sw_g(:,ib), sw_up_band(:,ib), sw_down_band(:,ib), sw_net_band(:,ib), band_asr)
+    end do
+    sw_up = sum(sw_up_band, dim=2)
+    sw_down = sum(sw_down_band, dim=2)
+    sw_net = sum(sw_net_band, dim=2)
+    asr = -sw_net(1)
+
+    !! A grey solve is linear in all thermal sources. Weight the entire
+    !! solution, including its internal flux, by the infrared band fraction.
+    do ib = 1, 2
+      call solve_lw_band(lw_scheme, nlay, nlev, Tl, pl, pe, tau_IRe(:,ib), lw_a(:,ib), lw_g(:,ib), Tint, &
+        & band_up, band_down, band_net, band_olr)
+      lw_up_band(:,ib) = Beta_IR(ib)*band_up
+      lw_down_band(:,ib) = Beta_IR(ib)*band_down
+      lw_net_band(:,ib) = Beta_IR(ib)*band_net
+    end do
+    lw_up = sum(lw_up_band, dim=2)
+    lw_down = sum(lw_down_band, dim=2)
+    lw_net = sum(lw_net_band, dim=2)
+    olr = lw_up(1)
+    net_F = sw_net + lw_net
+
+    if (abs(sw_up(nlev)) > 1.0e-10_dp*max(1.0_dp, Finc)) &
+      & error stop 'Invalid shortwave lower-boundary upward flux'
+    if (lw_scheme /= 'none' .and. lw_scheme /= 'None') then
+      if (abs(lw_net(nlev) - Fint) > 1.0e-7_dp*max(1.0_dp, Fint)) &
+        & error stop 'Invalid longwave lower-boundary internal flux'
+    end if
 
     !! Calculate the temperature tendency due to radiation
     do i = 1, nlay
@@ -318,32 +328,41 @@ program Exo_FMS_RC
     end do
 
     !! Convective adjustment scheme
+    !! The schemes act on the column after this step's radiative heating,
+    !! so the column is convectively stable at the end of the step
+    Tl_rad(:) = Tl(:) + t_step * dT_rad(:)
     select case(adj_scheme)
-    case('Ray_dry')
-      ! Dry convective adjustment following Ray Pierrehumbert's python script
-      call Ray_dry_adj(nlay, nlev, t_step, kappa_air, Tl, pl, pe, dT_conv)
-    case('None')
+    case('Manabe')
+      ! Dry convective adjustment after Manabe, Smagorinsky & Strickler (1965), no iteration
+      call Manabe_dry_adjust(nlay, Tl_rad, pl, pe, kappa_air, t_step, dT_conv)
+      Kzz(:) = 1e1_dp
+    case('Pierrehumbert','Ray_dry')
+      ! Pairwise dry convective adjustment following Ray Pierrehumbert's python script
+      call Pierrehumbert_dry_adjust(nlay, Tl_rad, pl, pe, kappa_air, t_step, dT_conv)
+      Kzz(:) = 1e1_dp
+    case('MLT')
+      ! Use mixing length theory (MLT) to time dependently adjust the adiabat and estimate Kzz
+      call MLT(nlay, Tl_rad, pl, pe, Rd_bar, cp_bar, grav, t_step, dT_conv, Kzz=Kzz_e)
+      ! MLT gives Kzz at the levels, output the layer average
+      Kzz(:) = 0.5_dp * (Kzz_e(1:nlay) + Kzz_e(2:nlev))
+    case('none','None')
+      dT_conv(:) = 0.0_dp
+      Kzz(:) = 1e1_dp
     case default
       print*, 'Invalid adj_scheme: ', trim(adj_scheme)
-      stop
+      error stop
     end select
 
     !! Forward march the temperature change in each layer from convection and radiation
     Tl(:) = Tl(:) + t_step * (dT_conv(:) + dT_rad(:))
 
-    !! Check for NaN's in the temperature and exit the simulation if detected
-    do i = 1, nlay
-      if (ieee_is_nan(Tl(i)) .eqv. .True.) then
-        do j = 1, nlay
-          print*, j, Tl(j), net_F(j), dT_rad(j), dT_conv(j)
-        end do
-        print*, nlev, net_F(nlev)
-        inan = 1
-        exit
-      end if
-    end do
-    if (inan == 1) then
-      exit
+    !! Fail visibly on non-finite or nonphysical temperature profiles.
+    if (any(.not. ieee_is_finite(Tl)) .or. any(Tl <= 0.0_dp)) then
+      print*, 'Invalid temperature at timestep: ', n
+      do j = 1, nlay
+        print*, j, Tl(j), net_F(j), dT_rad(j), dT_conv(j)
+      end do
+      error stop 'Invalid temperature profile'
     end if
 
     !! Increase the total time simulated
@@ -368,14 +387,30 @@ program Exo_FMS_RC
   print*, asr
 
   print*, 'Outputting results: '
-  open(newunit=u,file='FMS_RC_pp.out', action='readwrite')
+  open(newunit=u,file='FMS_RC_pp.out', status='replace', action='write')
   do i = 1, nlay
     write(u,*) i, pl(i), Tl(i), dT_rad(i), dT_conv(i), 0.5_dp*(tau_Ve(i+1,:)+tau_Ve(i,:)), 0.5_dp*(tau_IRe(i+1,:)+tau_IRe(i,:)), &
-      & k_Vl(i,:), k_IRl(i,:)
+      & k_Vl(i,:), k_IRl(i,:), Kzz(i)
   end do
   close(u)
 
-  print*, n, 'steps took: '
+  ! Broadband fluxes followed by all three visible/two IR optical depths.
+  open(newunit=u,file='FMS_RC_flx.out',status='replace',action='write')
+  do i = 1, nlev
+    write(u,*) i, pe(i), sw_up(i), sw_down(i), sw_net(i), lw_up(i), lw_down(i), lw_net(i), &
+      & tau_Ve(i,:), tau_IRe(i,:)
+  end do
+  close(u)
+
+  ! Band-resolved fluxes: SW up/down/net (3 each), then LW up/down/net (2 each).
+  open(newunit=u,file='FMS_RC_band_flx.out',status='replace',action='write')
+  do i = 1, nlev
+    write(u,*) i, pe(i), sw_up_band(i,:), sw_down_band(i,:), sw_net_band(i,:), &
+      & lw_up_band(i,:), lw_down_band(i,:), lw_net_band(i,:)
+  end do
+  close(u)
+
+  print*, min(n,nstep), 'steps took: '
   print '("Time = ",f8.3," seconds.")', finish-start
 
 end program Exo_FMS_RC

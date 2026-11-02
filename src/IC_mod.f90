@@ -13,7 +13,8 @@ module IC_mod
 
 contains
 
-  subroutine IC_profile(iIC,corr,nlay,p0,pl,k_V,k_IR,Tint,mu,Tirr,grav,fl,Tl,prc,table_num,met)
+  subroutine IC_profile(iIC,corr,nlay,p0,pl,k_V,k_IR,Tint,mu,Tirr,grav,fl,Tl,prc,table_num,met, &
+    & Tdeep_init,Tstrat_init,kappa)
     implicit none
 
     !! Input flags
@@ -22,7 +23,7 @@ contains
 
     !! Input quantities
     integer, intent(in) :: nlay, table_num
-    real(dp), intent(in) :: p0, Tint, mu, Tirr, grav, fl, met
+    real(dp), intent(in) :: p0, Tint, mu, Tirr, grav, fl, met, Tdeep_init, Tstrat_init, kappa
     real(dp), dimension(nlay), intent(in) :: pl
     real(dp), dimension(nlay), intent(in) :: k_V, k_IR
 
@@ -49,6 +50,8 @@ contains
       ! Mayne et al. (2014) IC - check the iprof parameter in the subroutine
       ! for then dayside/nightside switch
       call Mayne_2014_IC(nlay,pl,Tl)
+    case(6)
+      call dry_adiabat(nlay,p0,pl,Tdeep_init,Tstrat_init,kappa,Tl)
     case default
       print*, 'Invalid IC integer in IC_mod, stopping'
       stop
@@ -57,12 +60,26 @@ contains
 
     !! Perform adiabatic correction according to Parmentier et al. (2015)
     if (corr .eqv. .True.) then
-      call adiabat_correction(nlay,Tl,pl,prc)
+      call adiabat_correction(nlay,Tl,pl,p0,prc)
     else
       prc = p0
     end if
 
   end subroutine IC_profile
+
+  subroutine dry_adiabat(nlay,p0,pl,Tdeep,Tstrat,kappa,Tl)
+    implicit none
+
+    integer, intent(in) :: nlay
+    real(dp), intent(in) :: p0, Tdeep, Tstrat, kappa
+    real(dp), dimension(nlay), intent(in) :: pl
+
+    real(dp), dimension(nlay), intent(out) :: Tl
+
+    Tl(:) = Tdeep * (pl(:)/p0)**kappa
+    Tl(:) = max(Tl(:), Tstrat)
+
+  end subroutine dry_adiabat
 
   subroutine Iso_IC(nlay,Tint,Tl)
     implicit none
@@ -97,12 +114,12 @@ contains
 
   end subroutine Tdeep_IC
 
-  subroutine Guillot_IC(nlay,p0,pl,k_V,k_IR,Tint,mu,Tirr,grav,fl,Tl)
+  subroutine Guillot_IC(nlay,p0,pl,k_V,k_IR,Tint,mu_in,Tirr,grav,fl,Tl)
     implicit none
 
     !! Input quantities
     integer, intent(in) :: nlay
-    real(dp), intent(in) :: p0, k_V, k_IR, Tint, mu, Tirr, grav, fl
+    real(dp), intent(in) :: p0, k_V, k_IR, Tint, mu_in, Tirr, grav, fl
     real(dp), dimension(nlay), intent(in) :: pl
 
     !! Output quantities
@@ -110,8 +127,9 @@ contains
 
     !! Work variables
     real(dp), dimension(nlay) :: tau_IRl
-    real(dp) :: gam, tau0
+    real(dp) :: gam, tau0, mu
 
+    mu = max(1e-6_dp,mu_in)
     gam = k_V/k_IR
     tau0 = k_IR/grav * p0 / fl
 
@@ -125,19 +143,19 @@ contains
   end subroutine Guillot_IC
 
   !! This subroutine follows Parmentier & Guillot (2014, 2015) non-grey picket fence scheme
-  subroutine Parmentier_IC(nlay,pl,Tint,mu,Tirr,grav,Tl,table_num,met)
+  subroutine Parmentier_IC(nlay,pl,Tint,mu_in,Tirr,grav,Tl,table_num,met)
     implicit none
 
     integer, intent(in) :: nlay
     real(dp), dimension(nlay), intent(in) :: pl
-    real(dp), intent(in) :: Tint, mu, Tirr, grav
+    real(dp), intent(in) :: Tint, mu_in, Tirr, grav
     integer, intent(in) :: table_num
     real(dp), intent(in) :: met
 
 
     real(dp), dimension(nlay), intent(out) :: Tl
 
-    real(dp) :: Teff0, Teff, Tmu, Bond, Tskin
+    real(dp) :: Teff0, Teff, Tmu, Bond, Tskin, mu
     real(dp), dimension(3) :: gam_V, Beta_V
     real(dp), dimension(2) :: Beta
     real(dp) :: gam_1, gam_2, gam_P, tau_lim
@@ -148,6 +166,8 @@ contains
     real(dp), dimension(3) :: C, D, E
     real(dp), dimension(nlay+1) :: tau
     real(dp), dimension(nlay) :: kRoss
+
+    mu = max(1e-6_dp,mu_in)
 
     !! Effective temperature parameter
     Tmu = (mu * Tirr**4)**(1.0_dp/4.0_dp)
@@ -241,12 +261,13 @@ contains
   end subroutine Parmentier_IC
 
   !! Subroutine that corrects for adiabatic region following Parmentier & Guillot (2015)
-  subroutine adiabat_correction(nlay,Tl,pl,prc)
+  subroutine adiabat_correction(nlay,Tl,pl,p0,prc)
     implicit none
 
     !! Input quantities
     integer, intent(in) :: nlay
     real(dp), dimension(nlay), intent(in) ::  pl
+    real(dp), intent(in) :: p0
 
     !! Output quantities
     real(dp), dimension(nlay), intent(inout) :: Tl
@@ -264,7 +285,8 @@ contains
     gradrad(nlay) = 0.0_dp
     gradad(nlay) = 0.0_dp
 
-    iRC = nlay-1
+    prc = p0
+    iRC = nlay
     iRC1 = nlay-1
 
     do k = nlay-1, 1, -1
