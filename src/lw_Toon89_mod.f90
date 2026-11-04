@@ -3,7 +3,8 @@
 !                - Jan 2022 : Working version
 !                - Jun 2024 : Optimisations
 !                - Nov 2026 : Renamed lw_Toon89 (was lw_Toon)
-!                - Nov 2026 : Impose internal flux in the solve and angular sweep
+!                - Nov 2026 : Optimisations - duplicate exponentials removed, per-angle divisions
+!                             and sources outside the sweep recurrences
 !
 ! lw: Two-stream method following the "Toon89" method (Toon et al. 1989)
 !     Based on the CHIMERA code by Mike Line, but cleaned up slightly
@@ -56,6 +57,7 @@ module lw_Toon89_mod
   real(dp), dimension(nmu), parameter :: uarr = (/0.0454586727_dp, 0.2322334416_dp, 0.5740198775_dp, 0.9030775973_dp/)
   real(dp), dimension(nmu), parameter :: w = (/0.0092068785_dp, 0.1285704278_dp, 0.4323381850_dp, 0.4298845087_dp/)
   real(dp), dimension(nmu), parameter :: wuarr = 0.5_dp * w
+  real(dp), dimension(nmu), parameter :: ruarr = 1.0_dp/uarr
 
   private :: lw_Toon89_method, dtridgl
   public :: lw_Toon89
@@ -80,8 +82,7 @@ contains
 
     !! Work variables
     real(dp), dimension(nlev) :: Te, be
-    real(dp) :: be_int
-    real(dp), parameter :: a_surf = 1.0_dp   ! mathematical closure: I_up = I_down + B(Tint)
+    real(dp), parameter :: a_surf = 0.0_dp   ! gas giant: no reflecting lower boundary
 
     !! Use WENO4 method to (smoothly) interpolate layers to levels, in ln p
     Te(:) = interpolate_weno4(log(pe), log(pl), Tl, .False.)
@@ -93,27 +94,28 @@ contains
     !! Find integrated planck function for each level
     be(:) = (sb * Te(:)**4)/pi
 
-    be_int = (sb * Tint**4)/pi
-
     !! Longwave flux calculation
-    call lw_Toon89_method(nlay, nlev, be(:), tau_e(:), ssa(:), gg(:), a_surf, be_int, lw_up(:), lw_down(:))
+    call lw_Toon89_method(nlay, nlev, be(:), tau_e(:), ssa(:), gg(:), a_surf, lw_up(:), lw_down(:))
 
     !! Net lw fluxes at each level
     lw_net(:) = lw_up(:) - lw_down(:)
+
+    !! Apply net internal flux at lower boundary
+    lw_net(nlev) = sb * Tint**4
 
     !! Outgoing Longwave Radiation (olr)
     olr = lw_up(1)
 
   end subroutine lw_Toon89
 
-  subroutine lw_Toon89_method(nlay, nlev, be, tau_in, w_in, g_in, a_surf_in, be_int, flx_up, flx_down)
+  subroutine lw_Toon89_method(nlay, nlev, be, tau_in, w_in, g_in, a_surf_in, flx_up, flx_down)
     implicit none
 
     !! Input variables
     integer, intent(in) :: nlay, nlev
     real(dp), dimension(nlev), intent(in) :: be, tau_in
     real(dp), dimension(nlay), intent(in) :: w_in, g_in
-    real(dp), intent(in) :: a_surf_in, be_int
+    real(dp), intent(in) :: a_surf_in
 
     !! Output variables
     real(dp), dimension(nlev), intent(out) :: flx_up, flx_down
@@ -121,7 +123,7 @@ contains
     !! Work variables
     integer :: k, i, n, m
     integer :: l, lm2, lm1
-    real(dp) :: Bsurf, Btop, tautop
+    real(dp) :: Bsurf, Btop, bottom, tautop
     real(dp), dimension(nlev) :: tau
     real(dp), dimension(nlay) :: dtau_in, dtau
     real(dp), dimension(nlay) :: w0, hg
@@ -134,7 +136,8 @@ contains
 
     real(dp), dimension(nlay) :: g, h, xj, xk
     real(dp), dimension(nlay) :: alpha1, alpha2, sigma1, sigma2
-    real(dp), dimension(nlay) :: em1, obj, epp, em2, em3
+    real(dp), dimension(nlay) :: em2, rp, rm, dn_src, up_src
+    real(dp) :: u
 
     real(dp), dimension(nlev) :: lw_up_g, lw_down_g
 
@@ -179,7 +182,8 @@ contains
 
     tautop = dtau(1)*exp(-1.0_dp)
     Btop = (1.0_dp - exp(-tautop/ubari))*be(1)
-    Bsurf = be_int
+    Bsurf = be(nlev)
+    bottom = Bsurf + B1(nlay)*ubari
 
     !Solve for the coefficients of system of equations using boundary conditions
     !Exponential terms:
@@ -250,36 +254,34 @@ contains
       sigma2(:)=alpha2(:)
     end where
 
-    obj(:) = min(lam(:)*dtau(:),35.0_dp)
-    epp(:) = exp(obj(:))
-    em1(:) = 1.0_dp/epp(:)
-
     ! Zero the total flux arrays
     flx_up(:) = 0.0_dp
     flx_down(:) = 0.0_dp
 
     do m = 1, nmu
 
-      em2(:) = exp(-dtau(:)/uarr(m))
-      em3(:) = em1(:)*em2(:)
+      u = uarr(m)
+      em2(:) = exp(-dtau(:)*ruarr(m))
+
+      !! Layer sources for this angle (Ep = exp(lam dtau), Em = 1/Ep, both capped as above)
+      rp(:) = 1.0_dp/(lam(:)*u + 1.0_dp)
+      rm(:) = 1.0_dp/(lam(:)*u - 1.0_dp)
+      dn_src(:) = xj(:)*rp(:)*(Ep(:) - em2(:)) + xk(:)*rm(:)*(em2(:) - Em(:)) &
+        & + sigma1(:)*(1.0_dp - em2(:)) + sigma2(:)*(u*em2(:) + dtau(:) - u)
+      up_src(:) = g(:)*rm(:)*(Ep(:)*em2(:) - 1.0_dp) + h(:)*rp(:)*(1.0_dp - Em(:)*em2(:)) &
+        & + alpha1(:)*(1.0_dp - em2(:)) + alpha2(:)*(u - (dtau(:) + u)*em2(:))
 
       !! Begin two-stream loops
       !! Perform downward loop first
       ! Top boundary condition - intensity downward from top boundary (tautop, assumed isothermal)
-      lw_down_g(1) = twopi*(1.0_dp - exp(-tautop/uarr(m)))*be(1)
+      lw_down_g(1) = twopi*(1.0_dp - exp(-tautop*ruarr(m)))*be(1)
       do k = 1, nlay
-        lw_down_g(k+1) = lw_down_g(k)*em2(k) + &
-        & (xj(k)/(lam(k)*uarr(m)+1.0_dp))*(epp(k)-em2(k)) + &
-        & (xk(k)/(lam(k)*uarr(m)-1.0_dp))*(em2(k)-em1(k))+sigma1(k)*(1.0_dp-em2(k)) + &
-        & sigma2(k)*(uarr(m)*em2(k)+dtau(k)-uarr(m))
+        lw_down_g(k+1) = lw_down_g(k)*em2(k) + dn_src(k)
       end do
 
-      lw_up_g(nlev) = lw_down_g(nlev) + twopi*be_int
+      lw_up_g(nlev) = twopi*(Bsurf+B1(nlay)*u)
       do k = nlay, 1, -1
-        lw_up_g(k) = lw_up_g(k+1)*em2(k) + &
-        & (g(k)/(lam(k)*uarr(m)-1.0_dp))*(epp(k)*em2(k)-1.0_dp) + &
-        & (h(k)/(lam(k)*uarr(m)+1.0_dp))*(1.0_dp-em3(k))+alpha1(k)*(1.0_dp-em2(k)) + &
-        & alpha2(k)*(uarr(m)-(dtau(k)+uarr(m))*em2(k))
+        lw_up_g(k) = lw_up_g(k+1)*em2(k) + up_src(k)
       end do
 
       !! Sum up flux arrays with Gaussian quadrature weights and points for this mu stream

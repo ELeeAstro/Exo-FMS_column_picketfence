@@ -1,12 +1,14 @@
 !!!
 ! Elspeth KH Lee - July 2024 : Initial version
+!                - Nov 2026 : Optimisations - reciprocals and source terms outside the sweep
+!                             recurrences
 ! lw: Absorption-only discontinuous finite-element method.
 !     Scattering is not represented by this solver.
 !!!
 
 module lw_DFE_mod
   use, intrinsic :: iso_fortran_env
-  use WENO4_mod, only : interpolate_weno4  
+  use WENO4_mod, only : interpolate_weno4
   implicit none
 
   !! Precision variables
@@ -41,6 +43,7 @@ module lw_DFE_mod
   integer, parameter :: nmu = 4
   real(dp), dimension(nmu), parameter :: uarr = (/0.0454586727_dp, 0.2322334416_dp, 0.5740198775_dp, 0.9030775973_dp/)
   real(dp), dimension(nmu), parameter :: w = (/0.0092068785_dp, 0.1285704278_dp, 0.4323381850_dp, 0.4298845087_dp /)
+  real(dp), dimension(nmu), parameter :: ruarr = 1.0_dp/uarr
 
   private :: lw_discontinuous_finite_element
   public :: lw_DFE
@@ -111,10 +114,10 @@ contains
 
     !! Work variables and arrays
     integer :: k, m
-    real(dp) :: denominator
     real(dp), dimension(nlay) :: dtau
-    real(dp), dimension(nlay) :: del, a, b
+    real(dp), dimension(nlay) :: del, ra, b, sdn, sup, pc
     real(dp), dimension(nlev) :: lw_up_g, lw_down_g, Ip, Im
+    real(dp), dimension(2:nlay) :: wk
 
     !! Calculate dtau in each layer
     dtau(:) = tau_in(2:) - tau_in(1:nlay)
@@ -129,48 +132,50 @@ contains
     !! Start loops to integrate in mu space
     do m = 1, nmu
 
-      del(:) = dtau(:)/uarr(m)
+      del(:) = dtau(:)*ruarr(m)
 
-      !! Find a and b for downward loop
+      !! Find 1/a and b, and the layer source terms, outside the recurrences
       b(:) = del(:)*(del(:) + 1.0_dp)
-      a(:) = del(:)**2 + 2.0_dp*del(:) + 2.0_dp
+      ra(:) = 1.0_dp/(del(:)**2 + 2.0_dp*del(:) + 2.0_dp)
+      pc(:) = 2.0_dp*(del(:) + 1.0_dp)*ra(:)
+
+      !! Interface weights of the incoming-side intensity, del_k/(del_k + del_k-1)
+      do k = 2, nlay
+        if (abs(del(k) + del(k-1)) > tiny(1.0_dp)) then
+          wk(k) = del(k)/(del(k) + del(k-1))
+        else
+          wk(k) = 1.0_dp
+        end if
+      end do
 
       !! Perform the Ip and Im calculation for the downward stream
+      sdn(:) = (del(:)*be(1:nlay) + b(:)*be(2:nlev))*ra(:)
+      sup(:) = (b(:)*be(1:nlay) - del(:)*be(2:nlev))*ra(:)
       Im(1) = 0.0_dp ! No external radiation
       do k = 1, nlay
-        Im(k+1) = (2.0_dp * Im(k) + del(k)*be(k) + b(k)*be(k+1))/a(k)
-        Ip(k) = (2.0_dp*(del(k) + 1.0_dp)*Im(k) + b(k)*be(k) - del(k)*be(k+1))/a(k)
+        Im(k+1) = 2.0_dp*ra(k)*Im(k) + sdn(k)
       end do
-      Ip(nlev) = 0.0_dp
+      Ip(1:nlay) = pc(:)*Im(1:nlay) + sup(:)
 
       lw_down_g(1) = Im(1)
       do k = 2, nlay
-        denominator = del(k) + del(k-1)
-        if (abs(denominator) > tiny(denominator)) then
-          lw_down_g(k) = (Im(k)*del(k) + Ip(k)*del(k-1))/denominator
-        else
-          lw_down_g(k) = Im(k)
-        end if
+        lw_down_g(k) = Im(k)*wk(k) + Ip(k)*(1.0_dp - wk(k))
       end do
       lw_down_g(nlev) = Im(nlev)
 
       !! Perform the Ip and Im calculation for the upward stream.
       !! Gas-giant lower boundary: the net upward intensity is B(Tint).
+      sdn(:) = (del(:)*be(2:nlev) + b(:)*be(1:nlay))*ra(:)
+      sup(:) = (b(:)*be(2:nlev) - del(:)*be(1:nlay))*ra(:)
       Im(nlev) = lw_down_g(nlev) + be_int
       do k = nlev, 2, -1
-        Im(k-1) = (2.0_dp * Im(k) + del(k-1)*be(k) + b(k-1)*be(k-1))/a(k-1)
-        Ip(k) = (2.0_dp*(del(k-1) + 1.0_dp)*Im(k) + b(k-1)*be(k) - del(k-1)*be(k-1))/a(k-1)
+        Im(k-1) = 2.0_dp*ra(k-1)*Im(k) + sdn(k-1)
       end do
-      Ip(1) = 0.0_dp
+      Ip(2:nlev) = pc(:)*Im(2:nlev) + sup(:)
 
       lw_up_g(1) = Im(1)
       do k = 2, nlay
-        denominator = del(k) + del(k-1)
-        if (abs(denominator) > tiny(denominator)) then
-          lw_up_g(k) = (Im(k)*del(k) + Ip(k)*del(k-1))/denominator
-        else
-          lw_up_g(k) = Im(k)
-        end if
+        lw_up_g(k) = Im(k)*wk(k) + Ip(k)*(1.0_dp - wk(k))
       end do
       lw_up_g(nlev) = Im(nlev)
       

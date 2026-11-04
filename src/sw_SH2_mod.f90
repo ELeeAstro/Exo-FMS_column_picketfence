@@ -1,6 +1,7 @@
 !!!
 ! Elspeth KH Lee - Jun 2024 : Initial version
 !                - Nov 2026 : Rewritten following PICASO exactly, enabled
+!                - Nov 2026 : Optimisations - compile-time band widths in the solver
 !
 ! sw: Two-stream spherical harmonic method (SH2) with multiple scattering (Rooney et al. 2024)
 !     Taken from PICASO (Batalha et al. 2019; Rooney et al. 2024) and converted to Fortran:
@@ -38,6 +39,9 @@ module sw_SH2_mod
   real(dp), parameter :: tthg_forward = 1.0_dp, tthg_back = -0.5_dp
   real(dp), parameter :: tthg_frac_a = 1.0_dp, tthg_frac_b = -1.0_dp
   integer, parameter :: tthg_frac_c = 2
+
+  !! Band widths of the two-stream matrix
+  integer, parameter :: kl = 2, ku = 2
 
   private :: sw_SH_two_stream, band_solve
   public :: sw_SH2
@@ -88,7 +92,6 @@ contains
 
     !! Work variables
     integer :: k, l, m, n
-    integer, parameter :: kl = 2, ku = 2
     real(dp) :: b_top, b_surface
     real(dp), dimension(nstr) :: Pu0
     real(dp), dimension(nlay) :: dtau, w0, f_deltaM, g_f, g_b, f_f
@@ -206,7 +209,7 @@ contains
       B(2*m+1) = zpl_down(m+1) - zpl_up(m)
     end do
 
-    call band_solve(n, kl, ku, Mb, B, X)
+    call band_solve(n, Mb, B, X)
 
     !! Level fluxes (PICASO F X + G) - top level from layer 1, level k+1 from the bottom of layer k
     flx_down(1) = Q1(1)*X(1) + Q2(1)*X(2) + zmn_down(1)
@@ -232,10 +235,11 @@ contains
 
   !! Banded Gaussian elimination with partial pivoting (as LAPACK dgbsv)
   !! A(i,j) = ab(kl+ku+1+i-j,j), the top kl rows of ab are workspace
-  subroutine band_solve(n, kl, ku, ab, b, x)
+  !! (band widths kl, ku are module parameters, so the loop bounds are known at compile time)
+  subroutine band_solve(n, ab, b, x)
     implicit none
 
-    integer, intent(in) :: n, kl, ku
+    integer, intent(in) :: n
     real(dp), dimension(2*kl+ku+1, n), intent(inout) :: ab
     real(dp), dimension(n), intent(inout) :: b
     real(dp), dimension(n), intent(out) :: x
