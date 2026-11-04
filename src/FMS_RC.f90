@@ -41,11 +41,6 @@ program Exo_FMS_RC
 
   real(dp), allocatable, dimension(:,:) :: sw_a, sw_g, lw_a, lw_g
 
-  logical :: zcorr
-  integer :: zcorr_meth
-  real(dp) :: radius
-  real(dp), allocatable, dimension(:) :: mu_z_eff, alt, alp
-
   real(dp) :: cp_air, grav, k_IR, k_V, kappa_air, Rd_air
   real(dp) :: olr, asr, band_olr, band_asr, Finc
   real(dp), allocatable :: sw_up(:), sw_down(:), sw_net(:), lw_up(:), lw_down(:), lw_net(:)
@@ -78,7 +73,7 @@ program Exo_FMS_RC
 
   namelist /FMS_RC_nml/ sw_scheme, lw_scheme, opac_scheme, adj_scheme, nlay, a_sh, b_sh, pref, &
           & t_step, nstep, Rd_air, cp_air, grav, mu_z, Tirr, Tint, k_V, k_IR, AB, fl, met, &
-          & iIC, corr, table_num, sw_ac, sw_gc, lw_ac, lw_gc, zcorr, zcorr_meth, radius, use_bond_fit, Tdeep_init, Tstrat_init
+          & iIC, corr, table_num, sw_ac, sw_gc, lw_ac, lw_gc, use_bond_fit, Tdeep_init, Tstrat_init
 
   !! Read input variables from namelist
   open(newunit=u_nml, file='FMS_RC.nml', status='old', action='read')
@@ -120,7 +115,6 @@ program Exo_FMS_RC
   allocate(Tl(nlay), dT_rad(nlay), dT_conv(nlay), net_F(nlev))
   allocate(tau_Ve(nlev,3),tau_IRe(nlev,2), k_Vl(nlay,3), k_IRl(nlay,2))
   allocate(Beta_V(3), Beta_IR(2), gam_V(3))
-  allocate(alt(nlev), mu_z_eff(nlev), alp(nlev))
 
   allocate(sw_up(nlev), sw_down(nlev), sw_net(nlev), lw_up(nlev), lw_down(nlev), lw_net(nlev))
   allocate(band_up(nlev), band_down(nlev), band_net(nlev))
@@ -260,39 +254,9 @@ program Exo_FMS_RC
     end select
 
 
-    if (zcorr .and. mu_z > 0.0_dp) then
-      ! First calculate the altitude at each level from the hypsometric equation
-      ! Assume constant gravity for simplicity
-      alt(nlev) = 0.0_dp
-      do k = nlay, 1, -1
-        alt(k) = alt(k+1) + (Rd_air*Tl(k))/grav * log(pe(k+1)/pe(k))
-      end do
-
-      select case(zcorr_meth)
-      case(1)
-        ! Basic geometric correction following Li & Shibata (2006) Eq. (2)
-        mu_z_eff(:) = sqrt(1.0 - (radius/(radius + alt(:)))**2 * (1.0 - mu_z**2))
-      case(2)
-        ! Spherical layer correction following Li & Shibata (2006) Eq.(10)
-        alp(nlev) = (alt(nlay) -  alt(nlev))/radius
-        do k = nlay,1,-1
-           alp(k) = (alt(k) -  alt(k+1))/(radius + alt(k))
-        end do
-        mu_z_eff(:) = (sqrt(1.0 - (radius/(radius + alt(:)))**2 * (1.0 - mu_z**2)) + &
-        & sqrt((1.0 + alp(:))**2 - (radius/(radius + alt(:)))**2 * (1.0 - mu_z**2))) / &
-        & (2.0 + alp(:))
-      case default
-        print*, 'Invalid zcorr_meth ', zcorr_meth
-        stop
-      end select
-    else
-      ! No correction, use single zenith angle
-      mu_z_eff(:) = mu_z
-    end if
-
     !! Independent shortwave solves: the incident stellar flux is split once.
     do ib = 1, 3
-      call solve_sw_band(sw_scheme, nlay, nlev, tau_Ve(:,ib), mu_z_eff, Finc*Beta_V(ib), &
+      call solve_sw_band(sw_scheme, nlay, nlev, tau_Ve(:,ib), mu_z, Finc*Beta_V(ib), &
         & sw_a(:,ib), sw_g(:,ib), sw_up_band(:,ib), sw_down_band(:,ib), sw_net_band(:,ib), band_asr)
     end do
     sw_up = sum(sw_up_band, dim=2)

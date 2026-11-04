@@ -3,7 +3,7 @@
 !                - Jan 2022 : Working version
 !                - Jun 2024 : Optimisations
 !                - Oct 2026 : Exo-FMS_2 version, gas giant lower boundary
-!                - Nov 2026 : Resonance guard, zcorr energy conservation fix, renamed sw_Toon89 (was sw_Toon)
+!                - Nov 2026 : Resonance guard, renamed sw_Toon89 (was sw_Toon)
 !                - Nov 2026 : Optimisations - one beam exponential per level (shared by the direct
 !                             beam and the particular solution), reciprocal mu0
 !
@@ -15,6 +15,7 @@
 
 module sw_Toon89_mod
   use, intrinsic :: iso_fortran_env
+  use sw_direct_mod, only : sw_direct
   implicit none
 
   !! Precision variables
@@ -39,8 +40,7 @@ contains
     integer, intent(in) :: nlay, nlev
     real(dp), dimension(nlev), intent(in) :: tau_e
     real(dp), dimension(nlay), intent(in) :: ssa, gg
-    real(dp), dimension(nlev), intent(in) :: mu_z
-    real(dp), intent(in) :: Finc
+    real(dp), intent(in) :: mu_z, Finc
 
     !! Output variables
     real(dp), dimension(nlev), intent(out) :: sw_up, sw_down, sw_net
@@ -49,9 +49,14 @@ contains
     !! Work variables
     real(dp), parameter :: a_surf = 0.0_dp   ! gas giant: no reflecting lower boundary
 
+    if (all(ssa(:) <= 1.0e-12_dp)) then
+      call sw_direct(nlev, tau_e, mu_z, Finc, sw_up, sw_down, sw_net, asr)
+      return
+    end if
+
     !! Shortwave flux calculation
-    if ((mu_z(nlev) > 0.0_dp) .and. (Finc > 0.0_dp)) then
-      call sw_Toon89_method(nlay, nlev, Finc, mu_z(:), tau_e(:), ssa(:), gg(:), a_surf, sw_down(:), sw_up(:))
+    if ((mu_z > 0.0_dp) .and. (Finc > 0.0_dp)) then
+      call sw_Toon89_method(nlay, nlev, Finc, mu_z, tau_e, ssa, gg, a_surf, sw_down, sw_up)
     else
       sw_down(:) = 0.0_dp
       sw_up(:) = 0.0_dp
@@ -71,7 +76,8 @@ contains
     !! Input variables
     integer, intent(in) :: nlay, nlev
     real(dp), intent(in) :: F0_in, w_surf_in
-    real(dp), dimension(nlev), intent(in) :: tau_in, mu_in
+    real(dp), dimension(nlev), intent(in) :: tau_in
+    real(dp), intent(in) :: mu_in
     real(dp), dimension(nlay), intent(in) :: w_in, g_in
 
     !! Output variables
@@ -81,7 +87,7 @@ contains
     integer :: k, i, n
     integer :: l, lm2, lm1
 
-    real(dp), dimension(nlev) :: dir, tau, cum_trans, ct
+    real(dp), dimension(nlev) :: dir, tau, ct
     real(dp), dimension(nlay) :: dtau_in, dtau, mu_zm, rmu, trans_top, trans_lay, F0_l
     logical, dimension(nlay) :: nudged
     real(dp), dimension(nlay) :: w0, hg
@@ -99,20 +105,7 @@ contains
     !! If zero albedo across all atmospheric layers then return direct beam only
     if (all(w_in(:) <= 1.0e-12_dp)) then
 
-      ! Check mu_z for spherical corrections
-      if (mu_in(nlev) == mu_in(1)) then
-        ! No zenith correction, use regular method
-        flx_down(:) = F0_in* mu_in(nlev) * exp(-tau_in(:)/mu_in(nlev))
-      else
-        ! Zenith angle correction, use cumulative transmission function
-        cum_trans(1) = tau_in(1)/mu_in(1)
-        do k = 1, nlev-1
-          cum_trans(k+1) = cum_trans(k) + (tau_in(k+1) - tau_in(k))/mu_in(k+1)
-        end do
-        do k = 1, nlev
-          flx_down(k) = F0_in * mu_in(nlev) * exp(-cum_trans(k))
-        end do
-      end if
+      flx_down(:) = F0_in*mu_in * exp(-(tau_in(:) - tau_in(1))/mu_in)
 
       flx_down(nlev) = flx_down(nlev) * (1.0_dp - w_surf_in) ! The surface flux for surface heating is the amount of flux absorbed by surface
       flx_up(:) = 0.0_dp ! We assume no upward flux here even if surface albedo
@@ -138,21 +131,12 @@ contains
       tau(k+1) = tau(k) + dtau(k)
     end do
 
-    !! Zenith angle in each layer (zcorr uses the lower level, as the cumulative transmission)
-    if (mu_in(nlev) == mu_in(1)) then
-      mu_zm(:) = mu_in(nlev)
-    else
-      mu_zm(:) = mu_in(2:nlev)
-    end if
+    mu_zm(:) = mu_in
 
     !! Direct beam transmission to each level
     rmu(:) = 1.0_dp/mu_zm(:)
-    cum_trans(1) = tau(1)*rmu(1)
-    do k = 1, nlay
-      cum_trans(k+1) = cum_trans(k) + dtau(k)*rmu(k)
-    end do
-    ct(:) = exp(-cum_trans(:))
-    dir(:) = F0_in * mu_in(nlev) * ct(:)
+    ct(:) = exp(-tau(:)/mu_in)
+    dir(:) = F0_in*mu_in*ct(:)
     trans_top(:) = ct(1:nlay)
 
     g1(:) = sqrt3d2 * (2.0_dp-w0(:)*(1.0_dp+hg(:)))
@@ -176,8 +160,7 @@ contains
     g3(:) = (1.0_dp - sqrt3*hg(:)*mu_zm(:))/2.0_dp
     g4(:) = 1.0_dp - g3(:)
 
-    !! Beam flux in each layer, so the beam scatters exactly the energy it loses (energy conserving with zcorr)
-    F0_l(:) = F0_in * mu_in(nlev)*rmu(:)
+    F0_l(:) = F0_in
 
     denom(:) = F0_l(:) * w0(:)/(lam(:)**2 - rmu(:)**2)
     Am(:) = denom(:) * (g4(:) * (g1(:) + rmu(:)) + g2(:)*g3(:))

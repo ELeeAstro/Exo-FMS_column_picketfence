@@ -197,10 +197,6 @@ sw_gc(3) - shortwave asymmetry factor for each visible band (constant at all lay
 lw_ac(2) - longwave single scattering albedo for each IR band (constant at all layers) \
 lw_gc(2) - longwave asymmetry factor for each IR band (constant at all layers)
 
-zcorr - include zenith angle correction (.True.) \
-zcorr_meth - zenith angle correction method (1,2)  \
-radius - planetary radius at the model's lower boundary (m)
-
 iIC - Initial condition selection integer (1 = isothermal at Tint, 2 = deep Guillot approximation, 3 = Guillot (2010), 4 = Parmentier (2014/2015), 5 = Mayne (2014), 6 = adiabatic from Tdeep_init with a Tstrat_init floor) \
 corr - Flag to perform the adiabatic gradient correction in the initial conditions \
 table_num - Parmentier table selection (1 = with TiO and VO, 2 = without TiO and VO)

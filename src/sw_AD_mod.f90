@@ -11,7 +11,6 @@
 !                and upward beam source, Rbs - the only parts needed), then a single downward sweep
 !                I_dn(l+1) = (I - R_l RbR_{l+1})^-1 [T_l I_dn(l) + sdn_l + R_l Rbs_{l+1}],
 !                I_up(l) = Rbs_l + RbR_l I_dn(l). Identical to the two-sided composites (rtop/rbase).
-!     Follows the zcorr beam path (each layer has its own zenith angle) and conserves energy.
 !
 ! Pros: accurate multiple scattering for any w and g, converges with nmu
 ! Cons: nn ~ log2(dtau) + 16 doublings (N x N matrix solves) per layer - the most expensive
@@ -20,6 +19,7 @@
 
 module sw_AD_mod
   use, intrinsic :: iso_fortran_env
+  use sw_direct_mod, only : sw_direct
   implicit none
 
   !! Precision variables
@@ -54,16 +54,20 @@ contains
     integer, intent(in) :: nlay, nlev
     real(dp), dimension(nlev), intent(in) :: tau_e
     real(dp), dimension(nlay), intent(in) :: ssa, gg
-    real(dp), dimension(nlev), intent(in) :: mu_z
-    real(dp), intent(in) :: Finc
+    real(dp), intent(in) :: mu_z, Finc
 
     !! Output variables
     real(dp), dimension(nlev), intent(out) :: sw_up, sw_down, sw_net
     real(dp), intent(out) :: asr
 
+    if (all(ssa(:) <= 1.0e-12_dp)) then
+      call sw_direct(nlev, tau_e, mu_z, Finc, sw_up, sw_down, sw_net, asr)
+      return
+    end if
+
     !! Shortwave flux calculation
-    if ((mu_z(nlev) > 0.0_dp) .and. (Finc > 0.0_dp)) then
-      call sw_adding_doubling(nlay, nlev, Finc, mu_z(:), tau_e(:), ssa(:), gg(:), sw_down(:), sw_up(:))
+    if ((mu_z > 0.0_dp) .and. (Finc > 0.0_dp)) then
+      call sw_adding_doubling(nlay, nlev, Finc, mu_z, tau_e, ssa, gg, sw_down, sw_up)
     else
       sw_down(:) = 0.0_dp
       sw_up(:) = 0.0_dp
@@ -82,8 +86,8 @@ contains
 
     !! Input variables
     integer, intent(in) :: nlay, nlev
-    real(dp), intent(in) :: F0_in
-    real(dp), dimension(nlev), intent(in) :: tau_in, mu_in
+    real(dp), intent(in) :: F0_in, mu_in
+    real(dp), dimension(nlev), intent(in) :: tau_in
     real(dp), dimension(nlay), intent(in) :: w_in, g_in
 
     !! Output variables
@@ -95,8 +99,8 @@ contains
     real(dp), dimension(nmom, nmu) :: Pl
     real(dp), dimension(nmom) :: chi, c2l, sgn, Pmu0
     real(dp), dimension(nmu,nmu) :: Ppp, Ppm, Imat
-    real(dp), dimension(nlay) :: dtau, w0, mu_l, F_top
-    real(dp), dimension(nlev) :: cum_trans, T_beam
+    real(dp), dimension(nlay) :: dtau, w0, F_top
+    real(dp), dimension(nlev) :: T_beam
     real(dp) :: f, colsum
     type(ad_layer), dimension(nlay) :: lay
     real(dp), dimension(nmu,nmu,nlev) :: RbR
@@ -106,18 +110,7 @@ contains
     !! If zero albedo across all atmospheric layers then return direct beam only
     if (all(w_in(:) <= 1.0e-12_dp)) then
 
-      ! Check mu_z for spherical corrections
-      if (mu_in(nlev) == mu_in(1)) then
-        ! No zenith correction, use regular method
-        flx_down(:) = F0_in * mu_in(nlev) * exp(-tau_in(:)/mu_in(nlev))
-      else
-        ! Zenith angle correction, use cumulative transmission function
-        cum_trans(1) = tau_in(1)/mu_in(1)
-        do k = 1, nlev-1
-          cum_trans(k+1) = cum_trans(k) + (tau_in(k+1) - tau_in(k))/mu_in(k+1)
-        end do
-        flx_down(:) = F0_in * mu_in(nlev) * exp(-cum_trans(:))
-      end if
+      flx_down(:) = F0_in*mu_in * exp(-(tau_in(:) - tau_in(1))/mu_in)
 
       flx_up(:) = 0.0_dp
 
@@ -157,23 +150,13 @@ contains
       end if
     end do
 
-    !! Zenith angle in each layer (zcorr uses the lower level, as the cumulative transmission)
-    if (mu_in(nlev) == mu_in(1)) then
-      mu_l(:) = mu_in(nlev)
-    else
-      mu_l(:) = mu_in(2:nlev)
-    end if
-
     !! Direct beam transmission to each level along the beam path (scaled tau)
-    cum_trans(1) = 0.0_dp
+    T_beam(1) = 1.0_dp
     do k = 1, nlay
-      cum_trans(k+1) = cum_trans(k) + dtau(k)/mu_l(k)
+      T_beam(k+1) = T_beam(k)*exp(-min(dtau(k)/mu_in, 200.0_dp))
     end do
-    T_beam(:) = exp(-min(cum_trans(:), 200.0_dp))
 
-    !! Beam flux (normal to the beam) at the top of each layer, so the beam scatters
-    !! exactly the energy it loses (energy conserving with zcorr)
-    F_top(:) = F0_in * mu_in(nlev)/mu_l(:) * T_beam(1:nlay)
+    F_top(:) = F0_in*T_beam(1:nlay)
 
     !! Doubling - R, T and beam sources of each layer
     do k = 1, nlay
@@ -212,12 +195,12 @@ contains
           end if
         end do
 
-        !! Beam phase vectors: scattering from the beam (mu0 = mu_l) into the downward (ppl)
+        !! Beam phase vectors: scattering from the beam into the downward (ppl)
         !! and upward (pmn) streams, normalised in the same way
         Pmu0(1) = 1.0_dp
-        Pmu0(2) = mu_l(k)
+        Pmu0(2) = mu_in
         do l = 2, nmom-1
-          Pmu0(l+1) = (real(2*l-1,dp)*mu_l(k)*Pmu0(l) - real(l-1,dp)*Pmu0(l-1))/real(l,dp)
+          Pmu0(l+1) = (real(2*l-1,dp)*mu_in*Pmu0(l) - real(l-1,dp)*Pmu0(l-1))/real(l,dp)
         end do
         do i = 1, nmu
           ppl(i) = sum(c2l(:)*chi(:)*Pl(:,i)*Pmu0(:))/(2.0_dp*pi)
@@ -231,7 +214,7 @@ contains
 
       end if
 
-      call layer_doubling(dtau(k), w0(k), mu_l(k), F_top(k), Ppp, Ppm, ppl, pmn, mu, wt, Imat, lay(k))
+      call layer_doubling(dtau(k), w0(k), mu_in, F_top(k), Ppp, Ppm, ppl, pmn, mu, wt, Imat, lay(k))
 
     end do
 
@@ -248,7 +231,7 @@ contains
     !! Top of atmosphere - no diffuse intensity from above, only the beam
     Idn(:) = 0.0_dp
     flx_up(1) = 2.0_dp*pi*sum(wt(:)*mu(:)*Rbs(:,1))
-    flx_down(1) = F0_in*mu_in(nlev)*T_beam(1)
+    flx_down(1) = F0_in*mu_in*T_beam(1)
 
     !! Downward pass: I_dn(l+1) = (I - Rba_l RbR_{l+1})^-1 [Tab_l I_dn(l) + sdn_l + Rba_l Rbs_{l+1}]
     do l = 1, nlay
@@ -256,7 +239,7 @@ contains
         & matmul(lay(l)%Tab, Idn) + lay(l)%sdn + matmul(lay(l)%Rba, Rbs(:,l+1)))
       Iup(:) = Rbs(:,l+1) + matmul(RbR(:,:,l+1), Idn)
       flx_up(l+1) = 2.0_dp*pi*sum(wt(:)*mu(:)*Iup(:))
-      flx_down(l+1) = 2.0_dp*pi*sum(wt(:)*mu(:)*Idn(:)) + F0_in*mu_in(nlev)*T_beam(l+1)
+      flx_down(l+1) = 2.0_dp*pi*sum(wt(:)*mu(:)*Idn(:)) + F0_in*mu_in*T_beam(l+1)
     end do
 
   end subroutine sw_adding_doubling

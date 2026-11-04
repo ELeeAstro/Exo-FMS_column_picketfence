@@ -9,6 +9,7 @@
 
 module sw_disort_ts_mod
   use, intrinsic :: iso_fortran_env
+  use sw_direct_mod, only : sw_direct
   implicit none
 
   !! Precision variables
@@ -26,8 +27,7 @@ contains
     integer, intent(in) :: nlay, nlev
     real(dp), dimension(nlev), intent(in) :: tau_e
     real(dp), dimension(nlay), intent(in) :: ssa, gg
-    real(dp), dimension(nlev), intent(in) :: mu_z
-    real(dp), intent(in) :: Finc
+    real(dp), intent(in) :: mu_z, Finc
 
     !! Output variables
     real(dp), dimension(nlev), intent(out) :: sw_up, sw_down, sw_net
@@ -46,11 +46,16 @@ contains
     real(dp) :: umu0, fbeam, Tint
     logical :: planck
 
+    if (all(ssa(:) <= 1.0e-12_dp)) then
+      call sw_direct(nlev, tau_e, mu_z, Finc, sw_up, sw_down, sw_net, asr)
+      return
+    end if
+
     !! Shortwave flux calculation
-    if ((mu_z(nlev) > 0.0_dp) .and. (Finc > 0.0_dp)) then
+    if ((mu_z > 0.0_dp) .and. (Finc > 0.0_dp)) then
 
       planck = .False.
-      umu0 =  mu_z(nlev)
+      umu0 = mu_z
       sw_net_d(:) = 0.0_dp
       sw_up_d(:) = 0.0_dp
       sw_down_d(:) = 0.0_dp

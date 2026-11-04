@@ -40,43 +40,43 @@ module picket_radiation_mod
   integer, parameter :: dp = real64
   public :: solve_sw_band, solve_lw_band
 contains
-  subroutine solve_sw_band(sw_scheme, nlay, nlev, tau_Ve, mu_z_eff, Finc, sw_a, sw_g, &
+  subroutine solve_sw_band(sw_scheme, nlay, nlev, tau_Ve, mu_z, Finc, sw_a, sw_g, &
     & sw_up, sw_down, sw_net, asr)
     character(len=*), intent(in) :: sw_scheme
     integer, intent(in) :: nlay, nlev
-    real(dp), intent(in) :: tau_Ve(nlev), mu_z_eff(nlev), Finc, sw_a(nlay), sw_g(nlay)
+    real(dp), intent(in) :: tau_Ve(nlev), mu_z, Finc, sw_a(nlay), sw_g(nlay)
     real(dp), intent(out) :: sw_up(nlev), sw_down(nlev), sw_net(nlev), asr
     select case(sw_scheme)
     case('sw_direct')
       ! Direct beam only method with no scattering
-      call sw_direct(nlev, tau_Ve, mu_z_eff, Finc, sw_up, sw_down, sw_net, asr)
+      call sw_direct(nlev, tau_Ve, mu_z, Finc, sw_up, sw_down, sw_net, asr)
     case('sw_adding')
       ! Approximate adding method with approximate scattering
-      call sw_adding(nlay, nlev, tau_Ve, mu_z_eff, Finc, sw_a, sw_g, sw_up, sw_down, sw_net, asr)
+      call sw_adding(nlay, nlev, tau_Ve, mu_z, Finc, sw_a, sw_g, sw_up, sw_down, sw_net, asr)
     case('sw_SDA')
       ! Spherical harmonic doubling adding (SDA) four stream method with multiple scattering
-      call sw_SDA(nlay, nlev, tau_Ve, mu_z_eff, Finc, sw_a, sw_g, sw_up, sw_down, sw_net, asr)
+      call sw_SDA(nlay, nlev, tau_Ve, mu_z, Finc, sw_a, sw_g, sw_up, sw_down, sw_net, asr)
     case('sw_Toon89')
       ! Toon89 shortwave method with multiple scattering
-      call sw_Toon89(nlay, nlev, tau_Ve, mu_z_eff, Finc, sw_a, sw_g, sw_up, sw_down, sw_net, asr)
+      call sw_Toon89(nlay, nlev, tau_Ve, mu_z, Finc, sw_a, sw_g, sw_up, sw_down, sw_net, asr)
     case('sw_disort_ts')
       ! Two stream disort method with multiple scattering
-      call sw_disort_ts(nlay, nlev, tau_Ve, mu_z_eff, Finc, sw_a, sw_g, sw_up, sw_down, sw_net, asr)
+      call sw_disort_ts(nlay, nlev, tau_Ve, mu_z, Finc, sw_a, sw_g, sw_up, sw_down, sw_net, asr)
     case('sw_disort')
       ! n-stream disort method with multiple scattering - benchmark method
-      call sw_disort(nlay, nlev, tau_Ve, mu_z_eff, Finc, sw_a, sw_g, sw_up, sw_down, sw_net, asr)
+      call sw_disort(nlay, nlev, tau_Ve, mu_z, Finc, sw_a, sw_g, sw_up, sw_down, sw_net, asr)
     case('sw_SH2')
       ! Two stream spherical harmonic method with multiple scattering (PICASO)
-      call sw_SH2(nlay, nlev, tau_Ve, mu_z_eff, Finc, sw_a, sw_g, sw_up, sw_down, sw_net, asr)
+      call sw_SH2(nlay, nlev, tau_Ve, mu_z, Finc, sw_a, sw_g, sw_up, sw_down, sw_net, asr)
     case('sw_SH4')
       ! Four stream spherical harmonic method with multiple scattering (PICASO)
-      call sw_SH4(nlay, nlev, tau_Ve, mu_z_eff, Finc, sw_a, sw_g, sw_up, sw_down, sw_net, asr)
+      call sw_SH4(nlay, nlev, tau_Ve, mu_z, Finc, sw_a, sw_g, sw_up, sw_down, sw_net, asr)
     case('sw_AD')
       ! Adding-doubling method with multiple scattering (AddingDoublingRT)
-      call sw_AD(nlay, nlev, tau_Ve, mu_z_eff, Finc, sw_a, sw_g, sw_up, sw_down, sw_net, asr)
+      call sw_AD(nlay, nlev, tau_Ve, mu_z, Finc, sw_a, sw_g, sw_up, sw_down, sw_net, asr)
     case('sw_Liou88')
       ! Delta-four-stream discrete ordinates method with multiple scattering (Liou et al. 1988)
-      call sw_Liou88(nlay, nlev, tau_Ve, mu_z_eff, Finc, sw_a, sw_g, sw_up, sw_down, sw_net, asr)
+      call sw_Liou88(nlay, nlev, tau_Ve, mu_z, Finc, sw_a, sw_g, sw_up, sw_down, sw_net, asr)
     case('sw_Feautier','sw_Feautrier')
       print*, 'Unsupported sw_scheme (not implemented): ', trim(sw_scheme)
       error stop

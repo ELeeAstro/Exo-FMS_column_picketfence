@@ -4,13 +4,14 @@
 !
 ! sw: n-stream DISORT method - intended as an accuracy benchmark
 !     Pros: Highly accurate reference solution, arbitrary stream number
-!     Cons: Very slow, single zenith angle so can't follow the zcorr beam path (unlike sw_Toon89 and sw_adding)
+!     Cons: Very slow
 !
 ! Gas giant lower boundary - albedo = 0, so nothing is reflected back up (sw_up(nlev) = 0)
 !!!
 
 module sw_disort_mod
   use, intrinsic :: iso_fortran_env
+  use sw_direct_mod, only : sw_direct
   implicit none
 
   !! Precision variables
@@ -35,17 +36,20 @@ contains
     integer, intent(in) :: nlay, nlev
     real(dp), dimension(nlev), intent(in) :: tau_e
     real(dp), dimension(nlay), intent(in) :: ssa, gg
-    real(dp), dimension(nlev), intent(in) :: mu_z
-    real(dp), intent(in) :: Finc
+    real(dp), intent(in) :: mu_z, Finc
 
     !! Output variables
     real(dp), dimension(nlev), intent(out) :: sw_up, sw_down, sw_net
     real(dp), intent(out) :: asr
 
+    if (all(ssa(:) <= 1.0e-12_dp)) then
+      call sw_direct(nlev, tau_e, mu_z, Finc, sw_up, sw_down, sw_net, asr)
+      return
+    end if
+
     !! Shortwave flux calculation
-    if ((mu_z(nlev) > 0.0_dp) .and. (Finc > 0.0_dp)) then
-      ! Single zenith angle, use the value at the lower boundary (as sw_disort_ts)
-      call call_DISORT(nlay, nlev, tau_e, ssa, gg, mu_z(nlev), Finc, sw_up, sw_down)
+    if ((mu_z > 0.0_dp) .and. (Finc > 0.0_dp)) then
+      call call_DISORT(nlay, nlev, tau_e, ssa, gg, mu_z, Finc, sw_up, sw_down)
     else
       sw_up(:) = 0.0_dp
       sw_down(:) = 0.0_dp

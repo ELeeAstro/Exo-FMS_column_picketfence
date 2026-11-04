@@ -130,6 +130,7 @@ RDI1MACH.o: RDI1MACH.f
 
 # Explicit module dependencies also support parallel builds.
 $(filter lw_%_mod.o,$(OBJECTS)): WENO4_mod.o
+$(filter-out sw_direct_mod.o,$(filter sw_%_mod.o,$(OBJECTS))): sw_direct_mod.o
 IC_mod.o: k_Rosseland_mod.o
 picket_radiation_mod.o: $(filter sw_%_mod.o lw_%_mod.o,$(OBJECTS))
 FMS_RC.o: picket_radiation_mod.o IC_mod.o k_Rosseland_mod.o Manabe_dry_adjust_mod.o Pierrehumbert_dry_adjust_mod.o MLT_mod.o

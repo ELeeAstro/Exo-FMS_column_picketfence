@@ -8,7 +8,7 @@
 !     fluxes.get_reflected_SH and fluxes.setup_4_stream_fluxes, checked against PICASO commit 4524b70
 !     (Oct 2026) to 1e-14. Delta-M scaling (f = g**4) and one-term HG phase function as PICASO.
 !     Differences to PICASO: no Rayleigh, gas giant lower boundary, own banded solver,
-!     fluxes found row by row, single zenith angle (no zcorr). None change the solution.
+!     fluxes found row by row. None change the solution.
 !     TTHG option: as PICASO, but delta-M uses the TTHG chi_nstr for w0 and dtau too (consistent).
 !     Pros: Most accurate sw scheme here, works well for clouds and hazes
 !     Cons: Banded matrix solve, ~5-8x slower than the two-stream methods
@@ -16,6 +16,7 @@
 
 module sw_SH4_mod
   use, intrinsic :: iso_fortran_env
+  use sw_direct_mod, only : sw_direct
   implicit none
 
   !! Precision variables
@@ -55,16 +56,20 @@ contains
     integer, intent(in) :: nlay, nlev
     real(dp), dimension(nlev), intent(in) :: tau_e
     real(dp), dimension(nlay), intent(in) :: ssa, gg
-    real(dp), dimension(nlev), intent(in) :: mu_z
-    real(dp), intent(in) :: Finc
+    real(dp), intent(in) :: mu_z, Finc
 
     !! Output variables
     real(dp), dimension(nlev), intent(out) :: sw_up, sw_down, sw_net
     real(dp), intent(out) :: asr
 
+    if (all(ssa(:) <= 1.0e-12_dp)) then
+      call sw_direct(nlev, tau_e, mu_z, Finc, sw_up, sw_down, sw_net, asr)
+      return
+    end if
+
     !! Shortwave flux calculation
-    if ((mu_z(nlev) > 0.0_dp) .and. (Finc > 0.0_dp)) then
-      call sw_SH_four_stream(nlay, nlev, Finc, mu_z(nlev), tau_e(:), ssa(:), gg(:), sw_down(:), sw_up(:))
+    if ((mu_z > 0.0_dp) .and. (Finc > 0.0_dp)) then
+      call sw_SH_four_stream(nlay, nlev, Finc, mu_z, tau_e, ssa, gg, sw_down, sw_up)
     else
       sw_down(:) = 0.0_dp
       sw_up(:) = 0.0_dp
@@ -111,7 +116,7 @@ contains
 
     !! If zero albedo across all atmospheric layers then return direct beam only
     if (all(w_in(:) <= 1.0e-12_dp)) then
-      cum_trans(:) = tau_in(:)/u0
+      cum_trans(:) = (tau_in(:) - tau_in(1))/u0
       flx_down(:) = F0PI * u0 * exp(-cum_trans(:))
       flx_up(:) = 0.0_dp
       return
