@@ -83,12 +83,12 @@ For the longwave method we have:
 1. Absorption approximation with exponential in tau function (AA_E)
 2. Absorption approximation with linear in tau function (AA_L)
 3. Short characteristics (sc) with linear interpolants and the extended absorption approximation (EAA) for scattering
-4. Short characteristics 8-stream discrete ordinates with anisotropic multiple scattering, solved by Riccati invariant imbedding, with a source function technique flux integration along the Hogan (2024) angles (sc_scat_ric)
+4. Short characteristics 8-stream discrete ordinates with anisotropic multiple scattering, solved by Riccati invariant imbedding (sc_scat_ric)
 5. Toon89 multiple scattering method
 6. Two- and four-stream spherical harmonics (SH2 and SH4), converted from PICASO
 7. Variational iteration method (VIM), exponential and linear in tau (VIM_E and VIM_L)
 8. Adding-doubling (AD) 8-stream multiple scattering, converted from AddingDoublingRT
-9. Four-stream discrete ordinates adding method (DDA, Zhang et al. 2013), with an optional source function technique flux integration along the Hogan (2024) angles (use_sft, off by default)
+9. Four-stream discrete ordinates adding method (DDA, Zhang et al. 2013)
 10. Delta-two- and four-stream combination method (Fu97, Fu et al. 1997)
 11. Chou et al. (1999) scaling with the Tang et al. (2018) adjustment (TAS)
 12. Two-stream DISORT version
@@ -237,7 +237,7 @@ Output files are replaced on each run.
 
 In methods that use Gaussian quadrature to perform the mu integration in intensity (to calculate the flux), various values and weights can be changed for testing at the top of the modules.
 Most longwave methods use the 4 node Gauss-Jacobi quadrature from Hogan (2024).
-The schemes where the quadrature points are also the scattering streams (sc_scat_ric, AD) use Gauss-Legendre points. sc_scat_ric uses its Gauss-Legendre streams for the scattering only, the fluxes are integrated along the Hogan (2024) angles (use_sft, on by default).
+The schemes where the quadrature points are also the scattering streams (sc_scat_ric, AD) use Gauss-Legendre points.
 You will need to clean and recompile the code if these are changed. Beware, some codes use the classical Gauss-Legendre method (flux = 2pi * intensity), while others include the weighting in the intensity (flux = pi * intensity).
 
 # Future developments

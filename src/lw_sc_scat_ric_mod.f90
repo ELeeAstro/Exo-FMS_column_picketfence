@@ -2,7 +2,7 @@
 ! Elspeth KH Lee - Oct 2026 : Riccati (invariant-imbedding) solution of the linear sc scattering scheme
 !
 ! lw: Short characteristics discrete ordinates with anisotropic multiple scattering, solved by
-!     Riccati invariant imbedding, with optional source function technique flux integration
+!     Riccati invariant imbedding
 !     Pros: Accurate heating rates, any number of streams
 !     Cons: Not well tested yet - use with caution, inaccurate for optically thick near-conservative
 !           scattering unless the vertical resolution is increased
@@ -51,13 +51,6 @@ module lw_sc_scat_ric_mod
 
   !! Total number of streams
   integer, parameter :: nstr = 2*nmu
-
-  !! Source function technique: final flux sweep along the Hogan (2024) Gauss-Jacobi-5 angles
-  !! (weights for the measure 2 mu dmu, F = pi sum(wh I))
-  logical, parameter :: use_sft = .True.
-  integer, parameter :: nh = 4
-  real(dp), dimension(nh), parameter :: uh = (/0.0454586727_dp, 0.2322334416_dp, 0.5740198775_dp, 0.9030775973_dp/)
-  real(dp), dimension(nh), parameter :: wh = (/0.0092068785_dp, 0.1285704278_dp, 0.4323381850_dp, 0.4298845087_dp/)
 
   private :: solve_nopiv, lu_factor_nopiv, lu_solve_nopiv, lu_solve_transpose_nopiv
   private :: solve4_nopiv_5, lu_factor4_nopiv, lu_solve4_5_nopiv, lu_solve4_transpose_4_nopiv
@@ -143,15 +136,6 @@ contains
     real(dp), dimension(nmu, nmu+1) :: Ym
     real(dp), dimension(nmu) :: c1, c2, Gs, Fs, e, pu, p0
     real(dp), dimension(nmu) :: dn, up
-
-    !! Source function technique work arrays
-    integer :: h
-    real(dp) :: sgn, ml
-    real(dp), dimension(0:nstr-1) :: Ph
-    real(dp), dimension(nmu, nlev) :: Dl, Ul
-    real(dp), dimension(nh, nlev) :: Sup, Sdn
-    real(dp), dimension(nlev) :: Ihd, Ihu
-    real(dp), dimension(nlay) :: ehd, phu, ph0
 
     !! Delta-M scaled optical depths, albedo and Henyey-Greenstein Legendre moments, f = g**nstr
     do k = 1, nlay
@@ -443,61 +427,7 @@ contains
       end do
       flx_down(k) = twopi*flx_down(k)
       flx_up(k) = twopi*flx_up(k)
-      Dl(:,k) = dn(:)
-      Ul(:,k) = c2(:)
       up(:) = dn(:)
-    end do
-
-    if (.not. use_sft) return
-
-    !! ---- Source function technique along the Hogan angles ----
-    !! Level source functions S_k(+/-mu_h) from the Legendre moments of the stream intensities
-    do k = 1, nlev
-      do h = 1, nh
-        Ph(0) = 1.0_dp
-        if (nstr > 1) Ph(1) = uh(h)
-        do l = 1, nstr-2
-          Ph(l+1) = (real(2*l+1,dp)*uh(h)*Ph(l) - real(l,dp)*Ph(l-1))/real(l+1,dp)
-        end do
-        Sup(h,k) = q(k)
-        Sdn(h,k) = q(k)
-        if (noscat(k)) cycle
-        do l = 0, nstr-1
-          sgn = real(1 - 2*mod(l,2), dp)  ! (-1)**l
-          ml = 0.0_dp
-          do j = 1, nmu
-            ml = ml + w(j)*Pl(l,j)*(Ul(j,k) + sgn*Dl(j,k))
-          end do
-          ml = ssa_lev(k)*chi_lev(l,k)*0.5_dp*real(2*l+1,dp)*ml*Ph(l)
-          Sup(h,k) = Sup(h,k) + ml
-          Sdn(h,k) = Sdn(h,k) + sgn*ml
-        end do
-      end do
-    end do
-
-    !! Linear sc sweeps: top - no incident intensity, bottom - I_up = I_down + B(Tint)
-    flx_down(:) = 0.0_dp
-    flx_up(:) = 0.0_dp
-    do h = 1, nh
-      Ihd(1) = 0.0_dp
-      do k = 1, nlay
-        del = dtau(k)/uh(h)
-        ehd(k) = exp(-del)
-        if (del < 1.0e-6_dp) then
-          phu(k) = del*(0.5_dp - del*(1.0_dp/3.0_dp - del*0.125_dp))
-          ph0(k) = del*(0.5_dp - del*(1.0_dp/6.0_dp - del/24.0_dp))
-        else
-          phu(k) = (1.0_dp - (1.0_dp + del)*ehd(k))/del
-          ph0(k) = (1.0_dp - ehd(k)) - phu(k)
-        end if
-        Ihd(k+1) = ehd(k)*Ihd(k) + phu(k)*Sdn(h,k) + ph0(k)*Sdn(h,k+1)
-      end do
-      Ihu(nlev) = Ihd(nlev) + be_int
-      do k = nlay, 1, -1
-        Ihu(k) = ehd(k)*Ihu(k+1) + phu(k)*Sup(h,k+1) + ph0(k)*Sup(h,k)
-      end do
-      flx_down(:) = flx_down(:) + pi*wh(h)*Ihd(:)
-      flx_up(:) = flx_up(:) + pi*wh(h)*Ihu(:)
     end do
 
   end subroutine lw_sc_scat_ric_solve

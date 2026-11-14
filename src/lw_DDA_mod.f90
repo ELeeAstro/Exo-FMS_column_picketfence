@@ -6,7 +6,6 @@
 !                             transmissions, reciprocal angles
 !
 ! lw: Four-stream discrete ordinates adding method (4DDA, Zhang et al. 2013, 2016)
-!     with an optional source function technique flux integration (use_sft)
 !     Pros: Four-stream multiple scattering at near two-stream cost, only small matrix inversions
 !     Cons: Four streams only - lw_AD is better for very strong forward scattering
 !!!
@@ -36,15 +35,7 @@ module lw_DDA_mod
   real(dp), parameter :: w_max = 1.0_dp - 1.0e-6_dp
   real(dp), parameter :: dtau_min = 1.0e-10_dp
 
-  !! Source function technique: flux integration along the Hogan (2024) Gauss-Jacobi-5 angles
-  !! (weights for the measure 2 mu dmu, F = pi sum(wh I)) - off by default (canonical 4DDA fluxes)
-  logical, parameter :: use_sft = .False.
-  integer, parameter :: nh = 4
-  real(dp), dimension(nh), parameter :: uh = (/0.0454586727_dp, 0.2322334416_dp, 0.5740198775_dp, 0.9030775973_dp/)
-  real(dp), dimension(nh), parameter :: wh = (/0.0092068785_dp, 0.1285704278_dp, 0.4323381850_dp, 0.4298845087_dp/)
-  real(dp), dimension(nh), parameter :: ruh = 1.0_dp/uh
-
-  private :: lw_DDA_method, layer_RT, inv2, em1x
+  private :: lw_DDA_method, layer_RT, inv2
   public :: lw_DDA
 
 contains
@@ -69,11 +60,10 @@ contains
     real(dp) :: be_int
 
     !! Quadrature constants 
-    integer :: l, i, j, h
+    integer :: l, i, j
     real(dp), dimension(nmom, nmu) :: Plg
-    real(dp), dimension(nmom) :: c2l, Ph
+    real(dp), dimension(nmom) :: c2l
     real(dp), dimension(nmom,nmu,nmu) :: PP
-    real(dp), dimension(nmom,nmu,nh) :: HPs
 
     !! Legendre polynomials P_l(mu_i), l = 0..3 (stored at l+1)
     Plg(1,:) = 1.0_dp
@@ -93,17 +83,6 @@ contains
       end do
     end do
 
-    !! Source function technique: the same products with P_l at the Hogan angles
-    do h = 1, nh
-      Ph(1) = 1.0_dp
-      Ph(2) = uh(h)
-      Ph(3) = 0.5_dp*(3.0_dp*uh(h)**2 - 1.0_dp)
-      Ph(4) = 0.5_dp*(5.0_dp*uh(h)**3 - 3.0_dp*uh(h))
-      do j = 1, nmu
-        HPs(:,j,h) = 0.5_dp*w(j)*c2l(:)*Ph(:)*Plg(:,j)
-      end do
-    end do
-
     !! Use WENO4 method to (smoothly) interpolate layers to levels, in ln p
     Te(:) = interpolate_weno4(log(pe), log(pl), Tl, .False.)
 
@@ -116,7 +95,7 @@ contains
     be_int = (sb * Tint**4)/pi
 
     !! Longwave flux calculation
-    call lw_DDA_method(nlay, nlev, be(:), be_int, tau_e(:), ssa(:), gg(:), PP, HPs, lw_up(:), lw_down(:))
+    call lw_DDA_method(nlay, nlev, be(:), be_int, tau_e(:), ssa(:), gg(:), PP, lw_up(:), lw_down(:))
 
     !! Net lw fluxes at each level
     lw_net(:) = lw_up(:) - lw_down(:)
@@ -126,7 +105,7 @@ contains
 
   end subroutine lw_DDA
 
-  subroutine lw_DDA_method(nlay, nlev, be, be_int, tau_in, w_in, g_in, PP, HPs, flx_up, flx_down)
+  subroutine lw_DDA_method(nlay, nlev, be, be_int, tau_in, w_in, g_in, PP, flx_up, flx_down)
     implicit none
 
     !! Input variables
@@ -135,7 +114,6 @@ contains
     real(dp), dimension(nlay), intent(in) :: w_in, g_in
     real(dp), intent(in) :: be_int
     real(dp), dimension(nmom,nmu,nmu), intent(in) :: PP
-    real(dp), dimension(nmom,nmu,nh), intent(in) :: HPs
 
     !! Output variables
     real(dp), dimension(nlev), intent(out) :: flx_up, flx_down
@@ -152,17 +130,6 @@ contains
     real(dp), dimension(nmu,nlev) :: Sup
     real(dp), dimension(nmu) :: Iup, Idn
 
-    !! Source function technique work arrays
-    integer :: h, m
-    real(dp), dimension(nmom, nlay) :: chiL
-    real(dp), dimension(nmu, nlay) :: kL, exL, dL
-    real(dp), dimension(nmu, nmu, nlay) :: SGL, DGL, M1L, M2L
-    real(dp), dimension(nmu, nlev) :: IdnL, IupL
-    real(dp), dimension(nmu) :: uu, ss, Ac, Cc, he, ho, alp_p, bet_p, alp_m, bet_m, Kdec, Kgro
-    real(dp) :: x, ga, gb, tu, a
-    real(dp), dimension(nlev) :: Ihd, Ihu
-    real(dp), dimension(nh, nlay) :: Th, up_src, dn_src
-    real(dp) :: B1, cb, cd, c0p, c0m, c1, Ti, lin1
     real(dp) :: f
 
     Imat(:,:) = 0.0_dp
@@ -200,9 +167,7 @@ contains
         end do
       end do
 
-      if (use_sft) chiL(:,k) = chi(:)
-      call layer_RT(dtau(k), w0(k), be(k), be(k+1), Ws, Wd, Imat, R(:,:,k), T(:,:,k), Eu(:,k), Ed(:,k), &
-        & kL(:,k), exL(:,k), dL(:,k), SGL(:,:,k), DGL(:,:,k), M1L(:,:,k), M2L(:,:,k))
+      call layer_RT(dtau(k), w0(k), be(k), be(k+1), Ws, Wd, Imat, R(:,:,k), T(:,:,k), Eu(:,k), Ed(:,k))
 
     end do
 
@@ -225,106 +190,24 @@ contains
         Idn(:) = matmul(Md(:,:,k-1), matmul(T(:,:,k-1), Idn(:)) + Ed(:,k-1) + matmul(R(:,:,k-1), Sup(:,k)))
       end if
       Iup(:) = Sup(:,k) + matmul(Rbot(:,:,k), Idn(:))
-      if (use_sft) then
-        IdnL(:,k) = Idn(:)
-        IupL(:,k) = Iup(:)
-      else
-        flx_down(k) = 2.0_dp*pi*sum(w(:)*uarr(:)*Idn(:))
-        flx_up(k) = 2.0_dp*pi*sum(w(:)*uarr(:)*Iup(:))
-      end if
-    end do
-
-    if (.not. use_sft) return
-
-    !! Mode coefficients for the actual boundary intensities (I-(0) = IdnL(k), I+(D) = IupL(k+1)):
-    !! u = A + C = M1 [a + b - (B_top + B_bot)],  s = A - C = M2 [a - b - (B_top - B_bot) + 2 d B1]
-    !! (angle independent - once per layer), then the source terms of each Hogan angle
-    do k = 1, nlay
-      if (dtau(k) <= dtau_min) then
-        Th(:,k) = 1.0_dp
-        up_src(:,k) = 0.0_dp
-        dn_src(:,k) = 0.0_dp
-        cycle
-      end if
-      B1 = (be(k+1) - be(k))/dtau(k)
-      uu(:) = matmul(M1L(:,:,k), IdnL(:,k) + IupL(:,k+1) - (be(k) + be(k+1)))
-      ss(:) = matmul(M2L(:,:,k), IdnL(:,k) - IupL(:,k+1) - (be(k) - be(k+1)) + 2.0_dp*dL(:,k)*B1)
-      Ac(:) = 0.5_dp*w0(k)*(uu(:) + ss(:))
-      Cc(:) = 0.5_dp*w0(k)*(uu(:) - ss(:))
-      do h = 1, nh
-        !! Phase function projections onto +/-uh, split into even (he) and odd (ho) Legendre terms:
-        !! hs = he + ho (same hemisphere), hd = he - ho (opposite)
-        do j = 1, nmu
-          he(j) = sum(chiL(1:nmom:2,k)*HPs(1:nmom:2,j,h))
-          ho(j) = sum(chiL(2:nmom:2,k)*HPs(2:nmom:2,j,h))
-        end do
-        cb = (1.0_dp - w0(k)) + 2.0_dp*w0(k)*sum(he(:))
-        cd = 2.0_dp*w0(k)*sum(ho(:)*dL(:,k))*B1
-        c0p = cb*be(k) + cd
-        c0m = cb*be(k) - cd
-        c1 = cb*B1
-        !! Mode amplitudes of the source at +/-uh, with SG = Gp + Gm and DG = Gp - Gm:
-        !! hs.Gp + hd.Gm = he.SG + ho.DG,  hs.Gm + hd.Gp = he.SG - ho.DG
-        do m = 1, nmu
-          ga = sum(he(:)*SGL(:,m,k))
-          gb = sum(ho(:)*DGL(:,m,k))
-          alp_p(m) = Ac(m)*(ga + gb)
-          bet_p(m) = Cc(m)*(ga - gb)
-          alp_m(m) = Ac(m)*(ga - gb)
-          bet_m(m) = Cc(m)*(ga + gb)
-        end do
-        tu = dtau(k)*ruh(h)
-        Ti = exp(-tu)
-        Th(h,k) = Ti
-        do m = 1, nmu
-          a = kL(m,k)*uh(h)
-          Kdec(m) = (1.0_dp - Ti*exL(m,k))/(1.0_dp + a)
-          x = a - 1.0_dp
-          if (abs(x)*tu > 1.0e-3_dp) then
-            Kgro(m) = (Ti - exL(m,k))/x     ! reuses e^{-D/mu} and e^{-k D}, no new exponential
-          else
-            !! exp(-min(k, 1/uh) dtau) is Ti or e^{-k dtau}; em1x argument |x| tu <= 1e-3 (series)
-            Kgro(m) = tu*merge(Ti, exL(m,k), kL(m,k) >= ruh(h)) * em1x(abs(x)*tu)
-          end if
-        end do
-        lin1 = uh(h)*(1.0_dp - Ti) - dtau(k)*Ti
-        up_src(h,k) = c0p*(1.0_dp - Ti) + c1*lin1 + sum(alp_p(:)*Kdec(:)) + sum(bet_p(:)*Kgro(:))
-        dn_src(h,k) = (c0m + c1*dtau(k))*(1.0_dp - Ti) - c1*lin1 + sum(alp_m(:)*Kgro(:)) + sum(bet_m(:)*Kdec(:))
-      end do
-    end do
-
-    !! Formal solution along each Hogan angle
-    flx_down(:) = 0.0_dp
-    flx_up(:) = 0.0_dp
-    do h = 1, nh
-      Ihd(1) = 0.0_dp
-      do k = 1, nlay
-        Ihd(k+1) = Ihd(k)*Th(h,k) + dn_src(h,k)
-      end do
-      Ihu(nlev) = Ihd(nlev) + be_int
-      do k = nlay, 1, -1
-        Ihu(k) = Ihu(k+1)*Th(h,k) + up_src(h,k)
-      end do
-      flx_down(:) = flx_down(:) + pi*wh(h)*Ihd(:)
-      flx_up(:) = flx_up(:) + pi*wh(h)*Ihu(:)
+      flx_down(k) = 2.0_dp*pi*sum(w(:)*uarr(:)*Idn(:))
+      flx_up(k) = 2.0_dp*pi*sum(w(:)*uarr(:)*Iup(:))
     end do
 
   end subroutine lw_DDA_method
 
   !! Analytic 4-stream discrete ordinates solution of one homogeneous layer:
   !! R, T (2x2, incident from either side) and thermal sources Eu (up, top), Ed (down, bottom)
-  subroutine layer_RT(dtau, w0, B_top, B_bot, Ws, Wd, Imat, R, T, Eu, Ed, kko, exo, dout, SGo, DGo, M1o, M2o)
+  subroutine layer_RT(dtau, w0, B_top, B_bot, Ws, Wd, Imat, R, T, Eu, Ed)
     implicit none
 
     real(dp), intent(in) :: dtau, w0, B_top, B_bot
     real(dp), dimension(nmu,nmu), intent(in) :: Ws, Wd, Imat
     real(dp), dimension(nmu,nmu), intent(out) :: R, T
     real(dp), dimension(nmu), intent(out) :: Eu, Ed
-    real(dp), dimension(nmu), intent(out) :: kko, exo, dout
-    real(dp), dimension(nmu,nmu), intent(out) :: SGo, DGo, M1o, M2o
 
     integer :: i, m
-    real(dp), dimension(nmu,nmu) :: al, bt, amb, apb, Q, Gp, Gm, GmE, GpE, P1, P2
+    real(dp), dimension(nmu,nmu) :: al, bt, amb, apb, Q, Gp, Gm, GmE, GpE, P1, P2, M1o, M2o
     real(dp), dimension(nmu) :: kk, ex, X, Y, v1, v2, d, one, sum_o, dif_o
     real(dp) :: tr, det, disc, lam1, lam, B1
 
@@ -334,8 +217,6 @@ contains
       T(:,:) = Imat(:,:)
       Eu(:) = 0.0_dp
       Ed(:) = 0.0_dp
-      kko(:) = 0.0_dp ; exo(:) = 1.0_dp ; dout(:) = 0.0_dp
-      SGo(:,:) = 0.0_dp ; DGo(:,:) = 0.0_dp ; M1o(:,:) = 0.0_dp ; M2o(:,:) = 0.0_dp
       return
     end if
 
@@ -392,9 +273,6 @@ contains
     M2o(:,:) = inv2(Gm(:,:) - GpE(:,:))
     P1(:,:) = matmul(Gp(:,:) + GmE(:,:), M1o(:,:))   ! R + T
     P2(:,:) = matmul(Gp(:,:) - GmE(:,:), M2o(:,:))   ! R - T
-    if (use_sft) then
-      kko(:) = kk(:) ; exo(:) = ex(:) ; dout(:) = d(:) ; SGo(:,:) = Gp(:,:) + Gm(:,:) ; DGo(:,:) = Gp(:,:) - Gm(:,:)
-    end if
 
     R(:,:) = 0.5_dp*(P1(:,:) + P2(:,:))
     T(:,:) = 0.5_dp*(P1(:,:) - P2(:,:))
@@ -408,18 +286,6 @@ contains
     Ed(:) = 0.5_dp*(sum_o(:) - dif_o(:))
 
   end subroutine layer_RT
-
-  !! (1 - exp(-x))/x, stable as x -> 0
-  elemental function em1x(x) result(r)
-    implicit none
-    real(dp), intent(in) :: x
-    real(dp) :: r
-    if (x < 1.0e-3_dp) then
-      r = 1.0_dp - x*(0.5_dp - x*(1.0_dp/6.0_dp - x/24.0_dp))
-    else
-      r = (1.0_dp - exp(-x))/x
-    end if
-  end function em1x
 
   !! Inverse of a 2x2 matrix
   pure function inv2(A) result(B)
