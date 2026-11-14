@@ -4,33 +4,9 @@
 !                             stopped once g^l is negligible, (1 - T)/x source term from the
 !                             transmission
 !
-! lw: Chou et al. (1999) scaling with the Tang et al. (2018) adjustment scheme (TAS),
-!     thermal emission only. Used for longwave scattering in RTTOV and as the LW rescaling
-!     option in RTE+RRTMGP.
-!     Chou scaling: the diffuse field is replaced by I(mu') = I(mu) in the same hemisphere and
-!       B in the opposite hemisphere, so the scattering only removes the backscattered fraction b:
-!         mu/(1 - w(1-b)) dI/dtau = I - B,  i.e. a no-scattering problem in the scaled optical
-!         depth tau' = (1 - w(1-b)) tau = tau_abs + b tau_sca.
-!     TAS: for the upward intensity the opposite-hemisphere B is replaced by the (Chou) downward
-!       intensity at the same |mu|:
-!         mu dI+/dtau' = I+ - B - kappa (I-(tau',mu) - B),  kappa = w b/(1 - w(1-b)).
-!       With B linear in tau' and the Chou downward intensity inside the layer, the correction
-!       integrates analytically to (t = 0 layer top, D' = scaled layer optical depth, T = e^{-D'/mu}):
-!         dI+(0) = f_T kappa [ (I-(0) - B_top) - (I-(D') - B_bot) T - mu B1' (1 - T) ],
-!       where f_T = 1/2 is the exact solution of the TAS equations, which is the default here.
-!       Tang et al. (2018) suggested a tunable "Tang factor" (0.3), better for weak scattering only.
-!     Downward intensities are the Chou solution (no correction), as in Tang et al. (2018).
-!
-! Notes:
-!   - b is the hemispheric backscatter fraction of the full (unscaled) Henyey-Greenstein phase
-!     function, b = 1/2 int_0^1 dmu int_-1^0 Pbar(mu,mu') dmu' = 1/2 - 1/2 sum_odd (2l+1) g^l c_l^2,
-!     with c_l = int_0^1 P_l dmu = (P_(l-1)(0) - P_(l+1)(0))/(2l+1); no delta-scaling is applied.
-!   - tang_fact = 0 gives the plain Chou et al. (1999) scaling.
-!   - Hogan (2024) Gauss-Jacobi quadrature for the angular integration (flux = pi sum(w I)).
-!
-! Pros: no-scattering cost (two sweeps, no matrix solves), much better than Chou scaling alone
-! Cons: single-pass correction - fails for strongly scattering optically thick atmospheres (w -> 1);
-!       the Tang factor is empirical
+! lw: Chou et al. (1999) scaling with the Tang et al. (2018) adjustment (TAS)
+!     Pros: No-scattering cost, much better than Chou scaling alone
+!     Cons: Single correction - fails for strongly scattering optically thick atmospheres
 !!!
 
 module lw_TAS_mod

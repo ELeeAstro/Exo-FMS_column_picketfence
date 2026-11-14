@@ -3,16 +3,9 @@
 !                - Nov 2026 : Optimisations - scattering kernels from the layer transmissions (no
 !                             exponentials in the source loop), reciprocal angles
 !
-! lw: Variational Iteration Method, linear-in-tau Planck variant (alpha-4VIM_L)
-!     Follows the structure of Zhang et al. (2017) but with B(t) = B_k + B1 t inside each layer.
-!     Zeroth order: linear absorption approximation (AA) sweeps with
-!                   eps = sqrt((1-w)(1-wg)) (delta-Eddington scaled quantities).
-!     First order:  analytic scattering source from the zeroth-order intensities with a
-!                   two-term phase function P = 1 + 3 g mu mu', then one final sweep with
-!                   full extinction.
-!
-! Pros: no matrix inversions, no beta = log(B ratio) (robust in inversions and for small dtau)
-! Cons: single scattering iteration on AA - degrades for w -> 1 over optically thick columns
+! lw: Variational iteration method (following Zhang et al. 2017), linear in tau Planck function
+!     Pros: No matrix inversions, robust for small layer optical depths
+!     Cons: Single scattering iteration - degrades for high ssa in optically thick columns
 !!!
 
 module lw_VIM_L_mod

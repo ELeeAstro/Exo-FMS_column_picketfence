@@ -3,15 +3,8 @@
 !                - Oct 2026 : Rewritten from Exo-FMS_2 (fluxes at the interfaces, flux limiter, overshoot)
 !
 ! conv: Mixing length theory (MLT) dry convection (Robinson & Marley 2014; Joyce & Tayar 2023)
-!       Finds the convective heat flux at each interface where the gradient is superadiabatic,
-!       and the temperature tendency from its divergence. Also returns Kzz, with convective
-!       overshoot above each convective zone (Woitke et al. 2020).
-!       The flux is limited so the column relaxes towards, but never past, the adiabat.
 !     Pros: Time dependent convection, gives Kzz for tracer mixing, enthalpy conserving
-!     Cons: Not instant (column is only near adiabatic after the convective timescale), slower than adjustment
-!
-! Rd and cp can be scalars or given per layer (Rd(nlay), cp(nlay)).
-! Kzz and w_osh are returned at the levels (pe).
+!     Cons: Not instant adjustment, slower than the adjustment schemes
 !!!
 
 module MLT_mod

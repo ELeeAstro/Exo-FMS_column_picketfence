@@ -2,17 +2,9 @@
 ! Elspeth KH Lee - Sep 2020 : Initial version
 !                - Oct 2026 : Updated from Exo-FMS_2 (tracer and wind mixing, convergence flag)
 !
-! conv: Dry convective adjustment following Ray Pierrehumbert's python notebook implementation
-!       Sweeps down and then up the column, mixing each unstable pair of layers to neutral while
-!       conserving the enthalpy of the pair, repeated until no pair needs adjusting.
-!     Pros: Simple and robust, same profile as the Manabe scheme when converged
-!     Cons: A correction moves one layer per pass, so deep unstable regions need many passes
-!           (the column can be left unstable if itermax is reached, see converged)
-!
-! Optional: tracers (q) and winds (u, v) are mixed to their mass-weighted pair mean as each pair
-!           is adjusted, with the kinetic energy lost by the wind mixing returned as heat if cp is given.
-! Pass Tl including the other tendencies of the step (T + dt dT_other), so the column is
-! stable at the end of the step.
+! conv: Dry convective adjustment following Ray Pierrehumbert's python notebook
+!     Pros: Simple and robust
+!     Cons: Deep unstable regions need many passes (can be left unstable if itermax is reached)
 !!!
 
 module Pierrehumbert_dry_adjust_mod

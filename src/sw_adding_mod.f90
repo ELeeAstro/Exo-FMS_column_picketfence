@@ -4,9 +4,7 @@
 !                - Nov 2026 : Optimisations - direct beam as a running product of the layer
 !                             transmissions, shared denominators, reciprocals
 !
-! sw: Adding method for shortwave radiation, used in various Earth GCMs (e.g. Mendonça et al. 2015, RRTMG)
-!     Each layer has its own delta-Eddington reflection and transmission (Meador & Weaver 1980),
-!     then the layers are added together with one upward and one downward pass
+! sw: Adding method with delta-Eddington layers (Meador & Weaver 1980), as used in Earth GCMs
 !     Pros: Very fast, no matrix inversions, multiple scattering, works for clouds and hazes
 !     Cons: Two-stream (Eddington) accuracy within each layer
 !!!

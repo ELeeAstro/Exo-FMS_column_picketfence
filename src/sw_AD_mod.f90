@@ -1,20 +1,9 @@
 !!!
 ! Elspeth KH Lee - Nov 2026 : Initial version, converted from AddingDoublingRT (JAX/C++)
 !
-! sw: Adding-doubling method (matrix operator method; Plass, Kattawar & Catchings 1973;
-!     Hansen 1971), converted to Fortran from AddingDoublingRT (src_jax/doubling.py,
-!     adding.py, solver.py; same algorithm as the C++ src/), stellar beam source only.
-!     Doubling:  reflection R, transmission T and beam source vectors of each homogeneous
-!                layer, started from an optically thin sub-layer (single scattering of the
-!                beam) and doubled nn times.
-!     Adding:    one-sided (Riccati): composites from the bottom (reflection for light from above, RbR,
-!                and upward beam source, Rbs - the only parts needed), then a single downward sweep
-!                I_dn(l+1) = (I - R_l RbR_{l+1})^-1 [T_l I_dn(l) + sdn_l + R_l Rbs_{l+1}],
-!                I_up(l) = Rbs_l + RbR_l I_dn(l). Identical to the two-sided composites (rtop/rbase).
-!
-! Pros: accurate multiple scattering for any w and g, converges with nmu
-! Cons: nn ~ log2(dtau) + 16 doublings (N x N matrix solves) per layer - the most expensive
-!       sw method apart from sw_disort
+! sw: Adding-doubling method (8-stream), converted from AddingDoublingRT
+!     Pros: Accurate multiple scattering for any ssa and g, converges with stream number
+!     Cons: Slow - many doublings with matrix solves per layer
 !!!
 
 module sw_AD_mod

@@ -2,16 +2,8 @@
 ! Elspeth KH Lee - Oct 2026 : Initial version (from Exo-FMS_2)
 !
 ! conv: Dry convective adjustment following Manabe, Smagorinsky & Strickler (1965)
-!       Each unstable segment of the column is set to a single potential temperature, conserving
-!       the enthalpy of the segment. A single bottom-up sweep merges unstable layers into segments.
-!       Gives the same profile as the Pierrehumbert scheme when that one is fully converged.
-!     Pros: No iteration (cost linear in nlay), exactly neutral and enthalpy conserving
-!     Cons: Instant adjustment over one timestep (use relax_frac for partial relaxation)
-!
-! Optional: tracers (q) and winds (u, v) are mixed to their mass-weighted mean in each segment,
-!           with the kinetic energy lost by the wind mixing returned as heat if cp is given.
-! Pass Tl including the other tendencies of the step (T + dt dT_other), so the column is
-! stable at the end of the step.
+!     Pros: No iteration, exactly neutral and enthalpy conserving
+!     Cons: Instant adjustment over one timestep
 !!!
 
 module Manabe_dry_adjust_mod

@@ -1,48 +1,11 @@
 !!!
-! Elspeth KH Lee - Oct 2026 : Riccati (invariant-imbedding) solution of the linear sc scattering scheme 
-! !!! NOT WELL TESTED YET, USE WITH ABSOLUTE CAUTION !!!
+! Elspeth KH Lee - Oct 2026 : Riccati (invariant-imbedding) solution of the linear sc scattering scheme
 !
-! lw: Same discrete problem as lw_sc_scat (linear short characteristics, double-Gauss discrete ordinates,
-!     delta-M scaled Henyey-Greenstein phase function, level-averaged single scattering properties),
-!     solved exactly by an N x N reflection-operator recursion instead of 2N x 2N block Thomas elimination
-!     (N = nmu streams per hemisphere). Results agree with lw_sc_scat to round-off.
-!
-!     Notation at level k:  d_k = I_down(k), u_k = I_up(k)  (length N);  q_k = (1 - ssa_k) B_k
-!     Scattering blocks (reflection symmetry of the phase function):
-!       F_k = M^{dd}_k = M^{uu}_k  (forward),   G_k = M^{du}_k = M^{ud}_k  (backward)
-!     Layer k (levels k -> k+1), diagonal per-stream matrices: E = exp(-dtau/mu), P = psi_u, Q = psi_0
-!
-!     Linear sc relations:
-!       down (level k+1): (I - Q F_{k+1}) d_{k+1} - Q G_{k+1} u_{k+1} = (E + P F_k) d_k + P G_k u_k + P q_k + Q q_{k+1}
-!       up   (level k)  : (I - Q F_k) u_k - Q G_k d_k = (E + P F_{k+1}) u_{k+1} + P G_{k+1} d_{k+1} + P q_{k+1} + Q q_k
-!
-!     Ansatz u_k = R_k d_k + s_k, with R_K = I, s_K = B_int (internal flux lower boundary). Eliminating
-!     d_{k+1}, u_{k+1} gives, per layer (all N x N):
-!       W = I - Q (F_{k+1} + G_{k+1} R_{k+1}),        c1 = P q_k + Q q_{k+1} + Q G_{k+1} s_{k+1}
-!       V = (E + P F_{k+1}) R_{k+1} + P G_{k+1},       c2 = (E + P F_{k+1}) s_{k+1} + P q_{k+1} + Q q_k
-!       Z = V W^-1,  Aa = E + P F_k,  Bg = P G_k
-!       X = I - Q F_k - Z Bg,  Y = Q G_k + Z Aa
-!       R_k = X^-1 Y,  s_k = X^-1 (Z c1 + c2)
-!       T_k = W^-1 (Aa + Bg R_k),  t_k = W^-1 (Bg s_k + c1)
-!     then a single downward sweep:  d_1 = 0,  d_{k+1} = T_k d_k + t_k,  u_k = R_k d_k + s_k.
-!
-!     Clear layers (ssa = 0 at both bounding levels): F = G = 0 and the recursion reduces to diagonal
-!     scaling, R_k = E R_{k+1} E, at O(N^2) cost.
-!     Only the N x N quarter blocks F and G are built (even/odd Legendre split), 4x fewer operations
-!     than the full 2N x 2N scattering matrix.
-!
-!     use_sft = .True. (Nov 2026): source function technique. The double-Gauss stream intensities give
-!     the level source function at any angle, S_k(+/-mu) = q_k + ssa_k sum_l chi_l (2l+1)/2 P_l(+/-mu)
-!     sum_j w_j P_l(mu_j) [u_j + (-1)^l d_j], which is swept once more with the same linear sc relations
-!     along the Hogan (2024) Gauss-Jacobi angles to give the fluxes (F = pi sum(wh I)). Double-Gauss
-!     streams are best for the scattering, the Hogan angles for the emission integral (as Fu et al. 1997).
-!     Exact AA_L result for ssa = 0. Against 32-stream DISORT (54 layers, Guillot profile): the ssa = 0
-!     heating rate error falls from 3.8 to 2.4 K/day, no case is made worse, ~35% extra cost. With
-!     use_sft, 2 nodes per hemisphere is a fast option (~Toon89 cost, max heating error < 5 K/day).
-!
-!     Known limitation: optically thick, near-conservative layers (ssa -> 1, dtau >> 1) - the linear-in-tau
-!     source cannot follow the exponential diffusion modes, OLR is too low (-14% at ssa = 0.99 with the
-!     54 layer grid). This is vertical resolution, not quadrature: it converges with layer refinement.
+! lw: Short characteristics discrete ordinates with anisotropic multiple scattering, solved by
+!     Riccati invariant imbedding, with optional source function technique flux integration
+!     Pros: Accurate heating rates, any number of streams
+!     Cons: Not well tested yet - use with caution, inaccurate for optically thick near-conservative
+!           scattering unless the vertical resolution is increased
 !!!
 
 module lw_sc_scat_ric_mod

@@ -7,10 +7,9 @@
 !                             and sources outside the sweep recurrences
 !                - Nov 2026 : w capped at w_max (w = 1 gave NaN); accuracy is still poor as w -> 1
 !
-! lw: Two-stream method following the "Toon89" method (Toon et al. 1989)
-!     Based on the CHIMERA code by Mike Line, but cleaned up slightly
+! lw: Two-stream method following Toon et al. (1989), based on the CHIMERA code by Mike Line
 !     Pros: Fast, accurate at high optical depths, well used and familiar method
-!     Cons: For longwave combined high ssa and g (0.9+,0.9+) can be unstable
+!     Cons: Can be unstable for combined high ssa and g
 !!!
 
 module lw_Toon89_mod

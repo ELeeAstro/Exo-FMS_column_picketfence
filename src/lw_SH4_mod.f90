@@ -6,14 +6,10 @@
 !                             exponential per layer and angle), compile-time band widths in the
 !                             solver, reciprocals
 !
-! lw: Four-stream spherical harmonic method (SH4) with multiple scattering
-!     (Rooney et al. 2024), with the level up and down fluxes found using the source
-!     function technique (Toon et al. 1989)
-!     Taken from PICASO (Batalha et al. 2019; Rooney et al. 2024) and converted to Fortran:
-!     fluxes.get_thermal_SH with stream = 4 and fluxes.setup_4_stream_fluxes (four-stream system),
-!     checked line by line against PICASO commit 4524b70 (Oct 2026). The banded matrix, the
-!     linear-in-tau thermal particular solution, the delta-M scaling (f = g**4, as PICASO's
-!     optics) and the source-function intensity integration follow PICASO term by term.
+! lw: Four-stream spherical harmonic method (SH4, Rooney et al. 2024), converted from PICASO,
+!     with source function technique fluxes
+!     Pros: Four-stream multiple scattering accuracy
+!     Cons: Banded matrix solve, slower than the two-stream methods
 !!!
 
 module lw_SH4_mod

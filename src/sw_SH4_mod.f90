@@ -3,15 +3,9 @@
 !                - Nov 2026 : Rewritten following PICASO exactly, enabled
 !                - Nov 2026 : Optimisations - compile-time band widths in the solver
 !
-! sw: Four-stream spherical harmonic method (SH4) with multiple scattering (Rooney et al. 2024)
-!     Taken from PICASO (Batalha et al. 2019; Rooney et al. 2024) and converted to Fortran:
-!     fluxes.get_reflected_SH and fluxes.setup_4_stream_fluxes, checked against PICASO commit 4524b70
-!     (Oct 2026) to 1e-14. Delta-M scaling (f = g**4) and one-term HG phase function as PICASO.
-!     Differences to PICASO: no Rayleigh, gas giant lower boundary, own banded solver,
-!     fluxes found row by row. None change the solution.
-!     TTHG option: as PICASO, but delta-M uses the TTHG chi_nstr for w0 and dtau too (consistent).
-!     Pros: Most accurate sw scheme here, works well for clouds and hazes
-!     Cons: Banded matrix solve, ~5-8x slower than the two-stream methods
+! sw: Four-stream spherical harmonic method (SH4, Rooney et al. 2024), converted from PICASO
+!     Pros: Four-stream accuracy, works well for clouds and hazes
+!     Cons: Banded matrix solve, slower than the two-stream methods
 !!!
 
 module sw_SH4_mod

@@ -5,8 +5,6 @@
 ! sw: n-stream DISORT method - intended as an accuracy benchmark
 !     Pros: Highly accurate reference solution, arbitrary stream number
 !     Cons: Very slow
-!
-! Gas giant lower boundary - albedo = 0, so nothing is reflected back up (sw_up(nlev) = 0)
 !!!
 
 module sw_disort_mod

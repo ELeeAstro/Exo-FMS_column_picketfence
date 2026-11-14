@@ -1,7 +1,7 @@
 !!!
 ! Elspeth KH Lee - Jun 2024 : Initial version
 !
-! sw: Direct beam component only
+! sw: Direct beam only
 !     Pros: Very very fast
 !     Cons: Zero scattering
 !!!

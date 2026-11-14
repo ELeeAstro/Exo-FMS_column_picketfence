@@ -7,10 +7,9 @@
 !                - Nov 2026 : Optimisations - one beam exponential per level (shared by the direct
 !                             beam and the particular solution), reciprocal mu0
 !
-! sw: Two-stream method following the "Toon89" method (Toon et al. 1989)
-!     Based on the CHIMERA code by Mike Line, but cleaned up slightly
-!     Pros: Fast, decently accurate, multiple scattering method
-!     Cons: For combined high ssa and g (0.9+,0.9+) can be unstable and inaccurate
+! sw: Two-stream method following Toon et al. (1989), based on the CHIMERA code by Mike Line
+!     Pros: Fast, decently accurate, well used multiple scattering method
+!     Cons: Can be unstable and inaccurate for combined high ssa and g
 !!!
 
 module sw_Toon89_mod

@@ -3,34 +3,9 @@
 !                - Nov 2026 : Optimisations - e^{-k dtau} once per layer, growing-mode kernel from
 !                             the transmissions, reciprocal angles
 !
-! lw: delta-two- and four-stream combination method (delta-2/4; Fu et al. 1997, J. Atmos. Sci.),
-!     thermal emission only.
-!     Step 1:  delta-two-stream discrete ordinates solution at mu1 = 1/sqrt(3) (Fu et al. 1997
-!              Eqs. 2.9-2.10 with D = 1/mu1), Planck function linear in tau inside each layer,
-!              solved by layer adding (R, T and thermal sources per layer, composites from the top
-!              and from the bottom with the gas giant boundary I_up = I_down + B(Tint)).
-!     Step 2:  the two-stream solution inside each layer (particular + two exponential modes)
-!              gives the scattering source function at the four-stream (double-Gauss) angles,
-!              S(+/-mu_i) = (1 - w) B + w/2 [P(+/-mu_i, mu1) I+ + P(+/-mu_i, -mu1) I-],
-!              and the RTE is integrated analytically along each four-stream angle
-!              (linear and exponential source terms), giving the four-stream intensities and fluxes.
-!     The scattering is approximated (two-stream) but the intensity integration is four-stream,
-!     which Fu et al. found recovers most of the delta-four-stream accuracy at ~1.8x the
-!     two-stream cost (vs ~9x for the full four-stream solution).
-!
-! Notes:
-!   - delta-Eddington scaling (f = g**2) with the two-term phase function P = 1 + 3 g' mu mu':
-!     the source function is built from two-stream intensities, so only chi_0 and chi_1 are
-!     meaningful. (Tested against delta-M f = g**4 with chi_0..chi_3 retained: the two-term,
-!     f = g**2 version was the more accurate against a 48-stream reference.)
-!   - With a two-term phase function sum_j [P(mu_i,mu_j) + P(mu_i,-mu_j)]/2 = 1 for any mu1, so
-!     energy is conserved exactly; mu1 = 1/1.66 (Elsasser) can be used instead of 1/sqrt(3).
-!   - Exact for w = 0 (four-stream linear-in-tau formal solution) and I = B exactly in an
-!     isothermal medium.
-!   - w is capped at w_max (k -> 0 conservative limit).
-!
-! Pros: four-stream intensity integration at near two-stream cost, no iterations or matrix inversions
-! Cons: scattering still at two-stream accuracy - lw_DDA is more accurate for strongly scattering clouds
+! lw: Delta-two- and four-stream combination method (Fu et al. 1997)
+!     Pros: Four-stream intensity integration at near two-stream cost, no matrix inversions
+!     Cons: Scattering still at two-stream accuracy
 !!!
 
 module lw_Fu97_mod

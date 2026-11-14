@@ -4,11 +4,11 @@
 !                - Aug 2023 : Change quadrature following Li (2000)
 !                - Jun 2024 : Change quadrature following Hogan (2024)
 !                - Nov 2026 : Cleaned up, Taylor expansions for thin layers
-! lw: Short characteristics method (e.g. Helios-r2: Kitzmann et al. 2018) with linear interpolants
-!     (Olson & Kunasz 1987), with the Extended Absorption Approximation (EAA, Li 2002) for scattering
-!     Pros: Very fast, accurate at high optical depths, very stable
-!     Cons: Not technically multiple scattering (can be quite innacurate at even moderate albedo)
 !
+! lw: Short characteristics method with linear interpolants (Olson & Kunasz 1987), with the
+!     extended absorption approximation (Li 2002) for scattering
+!     Pros: Very fast, accurate at high optical depths, very stable
+!     Cons: Not multiple scattering (can be inaccurate at even moderate albedo)
 !!!
 
 module lw_sc_linear_mod

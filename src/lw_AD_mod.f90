@@ -2,18 +2,9 @@
 ! Elspeth KH Lee - Jun 2024 : Initial version
 !                - Nov 2026 : Full implementation, converted from AddingDoublingRT (JAX/C++)
 !
-! lw: Adding-doubling method (matrix operator method; Plass, Kattawar & Catchings 1973;
-!     Hansen 1971), converted to Fortran from AddingDoublingRT (src_jax/doubling.py,
-!     adding.py, solver.py; same algorithm as the C++ src/), thermal emission only.
-!     Doubling:  reflection R, transmission T and thermal source vectors of each homogeneous
-!                layer, started from an optically thin sub-layer (single scattering) and
-!                doubled nn times, with the Planck function linear in tau inside the layer.
-!     Adding:    composites from the top (rtop) and from the bottom (rbase) of the column,
-!                then the up and down intensities at every interface from the two composites.
-!
-! Pros: accurate multiple scattering for any w and g, converges with nmu
-! Cons: nn ~ log2(dtau) + 16 doublings (N x N matrix solves) per layer - the most expensive
-!       of the matrix-free/two-stream class, though far cheaper than lw_disort
+! lw: Adding-doubling method (8-stream), converted from AddingDoublingRT
+!     Pros: Accurate multiple scattering for any ssa and g, converges with stream number
+!     Cons: Slow - many doublings with matrix solves per layer
 !!!
 
 module lw_AD_mod

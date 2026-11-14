@@ -6,10 +6,9 @@
 !                             layer-last array layout, direct beam as a running product of the
 !                             layer transmissions, reciprocals
 !
-! sw: alpha-4SDA - 4 stream analytic spherical harmonic method with doubling adding method (Zhang & Li 2013)
-!     Gives the same answer as sw_SH4 (to machine precision), but with 2x2 adding instead of a banded matrix
-! Pros: Fast and accurate method with good multiple scattering approximation, no large matrix inversions
-! Cons: Four-stream approximation
+! sw: Four-stream spherical harmonic doubling-adding method (4SDA, Zhang & Li 2013)
+!     Pros: Fast and accurate multiple scattering, only small matrix inversions
+!     Cons: Four-stream approximation
 !!!
 
 module sw_SDA_mod

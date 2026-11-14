@@ -3,10 +3,9 @@
 !                - Nov 2026 : Optimisations - log(B ratio) once per layer (not per angle and
 !                             sweep), reciprocal angles
 !
-! lw: (Extended) Absorption Approximation following Li (2002) (alpha-nEAA) - This is the exoponential in tau method
-!     Pros: Very fast method with LW scattering approximation, no matrix inversions
-!     Cons: Not technically multiple scattering (can be quite innacurate at even moderate albedo)
-!
+! lw: Extended absorption approximation (Li 2002), exponential in tau Planck function
+!     Pros: Very fast with a LW scattering approximation, no matrix inversions
+!     Cons: Not multiple scattering (can be inaccurate at even moderate albedo)
 !!!
 
 module lw_AA_E_mod

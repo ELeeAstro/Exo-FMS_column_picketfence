@@ -3,8 +3,8 @@
 !                - Nov 2026 : Pass a local copy of nlev to TWOSTR
 !
 ! sw: Two-stream DISORT method with modifications from Xianyu Tan
-!     Pros: Multiple scattering method, independent check of the sw_Toon89 scheme (same answer)
-!     Cons: Two-stream only, ~3x slower than sw_Toon89
+!     Pros: Multiple scattering method, independent check of sw_Toon89
+!     Cons: Two-stream only, slower than sw_Toon89
 !!!
 
 module sw_disort_ts_mod

@@ -1,8 +1,9 @@
 !!!
 ! Elspeth KH Lee - Jun 2024 : Initial version
 !                - Nov 2026 : Pass a local copy of nlev to TWOSTR (it overwrites ntau)
-! lw: two-stream disort method with modifications from Xianyu Tan.
-!     Pros: Accurate and reasonably fast multiple scattering method
+!
+! lw: Two-stream DISORT method with modifications from Xianyu Tan
+!     Pros: Reasonably fast multiple scattering method
 !     Cons: Two-stream only, can be inaccurate
 !!!
 

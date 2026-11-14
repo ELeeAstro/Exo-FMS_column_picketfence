@@ -4,33 +4,9 @@
 !                             layout, direct beam as a running product of the layer transmissions,
 !                             reciprocals
 !
-! sw: delta-four-stream discrete ordinates method (Liou, Fu & Ackerman 1988, J. Atmos. Sci.)
-!     Four streams at the double-Gauss points (mu1, mu2) = (0.2113, 0.7887), a1 = a2 = 1/2,
-!     four-term phase function expansion (l = 0..3) with delta-M scaling (f = chi_4, g**4 for HG).
-!     Each layer is solved analytically:
-!       - the 4x4 eigenproblem reduces (symmetric quadrature) to the 2x2 problem C v = k**2 v,
-!         C = (A - B)(A + B), so k1**2 and k2**2 are the roots of a quadratic (Liou et al. Eq. 14)
-!       - the direct beam particular solution reduces to the 2x2 system
-!         (C - I/mu0**2) Z_s = (A - B) M^-1 Q_s - M^-1 Q_d / mu0
-!     The layer reflection and transmission (2x2, in stream intensities) and the direct beam
-!     source terms follow from the sum/difference split of the boundary conditions (2x2 inverses only).
-!     Layers are combined with one-sided (Riccati) adding (gas giant lower boundary, no reflection):
-!     an upward pass for the reflection of everything below each level (Rb) and the beam source (RkN),
-!     then a single downward sweep D_{l+1} = (I - R_l Rb_{l+1})^-1 [T_l D_l + Tdir_l T_l + R_l RkN_{l+1} T_{l+1}],
-!     U_k = Rb_k D_k + RkN_k T_k. Identical to two-sided adding with ~1/3 less work; no banded matrix.
-!
-! Notes:
-!   - Liou et al. (1988) solve the whole column with a 4N banded matrix (as sw_SH4); the adding
-!     here gives the same answer for the same layer solutions.
-!   - Energy is conserved exactly: the double-Gauss rule integrates P_l(mu) P_l(mu') (l <= 3) over
-!     each hemisphere exactly.
-!   - w is capped at w_max = 1 - 1e-12 (k -> 0 conservative limit), the eigenvector difference vector is
-!     found from (A - B)^-1 so that the near-conservative limit stays well conditioned. (A 1 - 1e-6 cap
-!     absorbs ~0.2% of the beam at w = 1 in a tau ~ 6000 column; 1 - 1e-12 agrees with sw_AD to 1e-5.)
-!   - mu0 is nudged off the k*mu0 = 1 resonance as in sw_SDA and sw_Toon89.
-!
-! Pros: Four-stream accuracy with closed-form eigenvalues and only 2x2 matrix inversions
-! Cons: Four-stream approximation
+! sw: Delta-four-stream discrete ordinates method with adding (Liou et al. 1988)
+!     Pros: Four-stream accuracy with closed-form eigenvalues and only small matrix inversions
+!     Cons: Four-stream approximation
 !!!
 
 module sw_Liou88_mod

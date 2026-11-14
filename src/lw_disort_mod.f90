@@ -4,35 +4,7 @@
 !
 ! lw: n-stream DISORT method - intended as an accuracy benchmark
 !     Pros: Highly accurate reference solution, arbitrary stream number
-!     Cons: Very slow compared to the two-stream methods
-!
-! Lower boundary
-! --------------
-! DISORT is written for a planetary surface, so its lower boundary emits
-! sigma*BTEMP**4 and reflects with albedo ALBEDO. A gas giant has no surface -
-! the requirement is instead that the interior supplies a prescribed NET
-! upward flux,
-!
-!     F_up(nlev) - F_down(nlev) = sigma*Tint**4,
-!
-! with downwelling radiation absorbed rather than reflected.
-!
-! We impose this on the *unmodified* DISORT by exploiting the linearity of the
-! radiative transfer equation in its source terms. With ALBEDO = 0 the only
-! boundary source is the lower-boundary emission x = B(BTEMP), and every flux
-! is an affine function of it,
-!
-!     F(x) = P + Q*x.
-!
-! Two DISORT calls with different BTEMP therefore determine the whole family,
-! and the combination
-!
-!     F = F1 + alpha*(F2 - F1),    alpha = (sigma*Tint**4 - net1) / (net2 - net1)
-!
-! is the exact solution carrying the same atmospheric Planck sources (their
-! weight is (1-alpha) + alpha = 1) and whatever lower-boundary emission is
-! needed to hit the required net flux. No modification of DISORT is required,
-! which matters for a routine whose purpose is to be a trustworthy reference.
+!     Cons: Very slow
 !!!
 
 module lw_disort_mod

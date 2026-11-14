@@ -1,9 +1,9 @@
 !!!
 ! Elspeth KH Lee - Aug 2023 : Initial version
-! lw: Extended Absorption Approximation (EAA) following Li (2002) - This is the linear in tau method
-!     Pros: Very fast method with LW scattering approximation, no matrix inversions
-!     Cons: Not technically multiple scattering (can be quite innacurate at even moderate albedo)
 !
+! lw: Extended absorption approximation (Li 2002), linear in tau Planck function
+!     Pros: Very fast with a LW scattering approximation, no matrix inversions
+!     Cons: Not multiple scattering (can be inaccurate at even moderate albedo)
 !!!
 
 module lw_AA_L_mod

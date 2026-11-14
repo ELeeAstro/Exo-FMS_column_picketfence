@@ -2,8 +2,10 @@
 ! Elspeth KH Lee - July 2024 : Initial version
 !                - Nov 2026 : Optimisations - reciprocals and source terms outside the sweep
 !                             recurrences
-! lw: Absorption-only discontinuous finite-element method.
-!     Scattering is not represented by this solver.
+!
+! lw: Absorption-only discontinuous finite-element method
+!     Pros: Stable and accurate for pure absorption
+!     Cons: No scattering
 !!!
 
 module lw_DFE_mod

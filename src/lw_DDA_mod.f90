@@ -5,50 +5,10 @@
 !                             function terms once per layer, thin-layer kernels from the
 !                             transmissions, reciprocal angles
 !
-! lw: Four-stream discrete ordinates adding method (4DDA; Zhang et al. 2013, J. Atmos. Sci.;
-!     infrared adding following the Zhang group's four-stream infrared work), thermal emission only.
-!     Layer:   analytic 4-stream (2 double-Gauss streams per hemisphere) discrete ordinates
-!              solution of each homogeneous layer. With S = I+ + I-, D = I+ - I-, the system
-!              reduces to d2S/dtau2 = (alpha+beta)(alpha-beta) S, a 2x2 eigenproblem whose
-!              eigenvalues k1^2, k2^2 are the roots of a quadratic (Zhang et al.'s biquadratic).
-!              The Planck function is linear in tau inside the layer: I+/- = B(tau) +/- d B1,
-!              with (E - w (Ws - Wd)) d = mu, so the thermal particular solution is exact.
-!              Only decaying exponentials are used (no overflow for any dtau).
-!              The layer is symmetric (same R and T from both sides), so the 4x4 boundary value
-!              problem splits into sum and difference parts with E = diag(e^{-k dtau}):
-!                R + T = (Gp + Gm E)(Gm + Gp E)^-1,   R - T = (Gp - Gm E)(Gm - Gp E)^-1,
-!              and the thermal sources follow from the same two matrices - only 2x2 inverses.
-!     Adding:  each layer gives 2x2 reflection R and transmission T (equal from both sides,
-!              homogeneous layer) and 2-vector thermal sources (Eu emitted up at the top, Ed
-!              down at the bottom). One-sided (Riccati) adding: composites from the bottom
-!              (Rbot, Sup, starting from the gas giant boundary I_up = I_down + B(Tint)), then a
-!              single downward sweep I_dn(k+1) = (I - R_k Rbot_{k+1})^-1 [T_k I_dn(k) + Ed_k + R_k Sup_{k+1}],
-!              I_up(k) = Sup_k + Rbot_k I_dn(k). Identical to two-sided adding, with ~1/3 less work.
-!
-! Notes:
-!   - Henyey-Greenstein phase function with delta-M scaling, f = g**4 (chi_(2 nmu), the first
-!     moment the 4-stream expansion cannot hold; the retained moments chi_0..chi_3 are exact).
-!   - Double-Gauss quadrature (Gauss-Legendre on [0,1], mu = 1/2 -/+ 1/(2 sqrt(3)), w = 1/2),
-!     as Zhang et al.; the streams are the scattering streams, so flux = 2 pi sum(w mu I).
-!     With 2 nodes per hemisphere sum_j w_j (P(mu_i,mu_j) + P(mu_i,-mu_j))/2 = 1 exactly,
-!     so energy is conserved without renormalising the phase matrix and an isothermal
-!     layer gives I = B exactly.
-!   - w is capped at w_max (the k2 -> 0 conservative limit is singular in the eigen-solution).
-!   - use_sft = .True. (option, off by default): source function technique. The analytic in-layer
-!     solution gives S(+/-mu, t) = c0 + c1 t + sum_m [alp_m e^{-k_m t} + bet_m e^{-k_m (D - t)}] at any
-!     angle, integrated analytically along the Hogan (2024) Gauss-Jacobi angles (as lw_Fu97 step 2)
-!     instead of the 2-node double-Gauss flux integral. Mode coefficients from the level intensities:
-!     A + C = M1 [a + b - (B_top + B_bot)], A - C = M2 [a - b - (B_top - B_bot) + 2 d B1].
-!     Against 32-stream DISORT (54 layers, Guillot profile, ssa 0-0.99, g 0-0.9): OLR error max
-!     0.39% -> 0.15%, worst heating error 12.0 -> 5.4 K/day (ssa = 0: 12.0 -> 2.4 K/day), but heating
-!     errors at ssa 0.5-0.9 increase (2.8 -> 5.4 K/day at ssa = 0.75), the 2-node integral cancels
-!     part of the four-stream scattering error there. Cost ~1.8x (~1.7x Toon89); more accurate than
-!     Toon89 in OLR and heating rate for almost all cases. The 3-node Hogan rule is not worth it
-!     (~7% faster, ssa = 0 heating error 2.4 -> 6.1 K/day).
-!
-! Pros: four-stream accuracy for multiple scattering at two-stream-like cost, no iterations,
-!       only 2x2 solves
-! Cons: four streams only - for very strong forward scattering lw_AD with more streams is better
+! lw: Four-stream discrete ordinates adding method (4DDA, Zhang et al. 2013, 2016)
+!     with an optional source function technique flux integration (use_sft)
+!     Pros: Four-stream multiple scattering at near two-stream cost, only small matrix inversions
+!     Cons: Four streams only - lw_AD is better for very strong forward scattering
 !!!
 
 module lw_DDA_mod

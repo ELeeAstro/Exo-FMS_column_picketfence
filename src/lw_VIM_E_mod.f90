@@ -6,17 +6,9 @@
 !                             exponentials in the source loop), log(B ratio) once per layer,
 !                             reciprocal angles
 !
-! lw: Variational Iteration Method, exponential-in-tau Planck variant (alpha-4VIM_E)
-!     Follows Zhang et al. (2017, J. Atmos. Sci. 74, 419) with B(t) = B_k e^{-beta t} inside
-!     each layer, beta = -ln(B_{k+1}/B_k)/dtau.
-!     Zeroth order: AA sweeps with the extended AA co-albedo eps_g = sqrt((1-w)(1-wg))
-!                   (Li 2002) for the level intensities.
-!     First order:  analytic scattering source from the zeroth-order intensities with a
-!                   two-term phase function P = 1 + 3 g mu mu', then one final sweep with
-!                   full extinction.
-!
-! Pros: no matrix inversions, OLR much better than AA alone
-! Cons: single scattering iteration on AA - degrades for w -> 1 over optically thick columns
+! lw: Variational iteration method (Zhang et al. 2017), exponential in tau Planck function
+!     Pros: No matrix inversions, much better than the absorption approximation alone
+!     Cons: Single scattering iteration - degrades for high ssa in optically thick columns
 !!!
 
 module lw_VIM_E_mod
