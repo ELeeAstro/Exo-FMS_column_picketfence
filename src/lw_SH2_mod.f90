@@ -5,11 +5,12 @@
 !                - Nov 2026 : Optimisations - beam integrals from the stored transmissions (one
 !                             exponential per layer and angle), compile-time band widths in the
 !                             solver, reciprocals
+!                - Nov 2026 : 2x2 block-tridiagonal Thomas solve (replaces the banded matrix solve)
 !
 ! lw: Two-stream spherical harmonic method (SH2, Rooney et al. 2024), converted from PICASO,
 !     with source function technique fluxes
 !     Pros: Multiple scattering with source function technique accuracy
-!     Cons: Two-stream scattering, banded matrix solve
+!     Cons: Two-stream scattering
 !!!
 
 module lw_SH2_mod
@@ -44,9 +45,8 @@ module lw_SH2_mod
   real(dp), dimension(nmu), parameter :: ruarr = 1.0_dp/uarr
 
   !! Band widths of the two-stream matrix
-  integer, parameter :: kl = 2, ku = 2
 
-  private :: lw_SH_two_stream, band_solve, e_alp, e_bet
+  private :: lw_SH_two_stream, sh2_solve, e_alp, e_bet
   public :: lw_SH2
 
 contains
@@ -109,7 +109,7 @@ contains
     real(dp), dimension(nlev), intent(out) :: flx_up, flx_down
 
     !! Work variables
-    integer :: k, m, n, i0
+    integer :: k, m
     real(dp) :: tautop, Btop, u, ru
     real(dp), dimension(nlay) :: dtau, w0, ff, B0, B1
     real(dp), dimension(nlay) :: w_multi0, w_multi1, a0, a1
@@ -118,11 +118,8 @@ contains
     real(dp), dimension(nlay) :: X1, X2
     real(dp), dimension(nlay) :: ex, c_ev, c_od, T_up, T_dn, Ip1, Nup, Ndn, Aup, Adn, ea, eb
     real(dp), dimension(nlay) :: src_up, src_dn, el, wa0
-    real(dp), dimension(2*nlay) :: rhs, X
-    real(dp), dimension(2*kl+ku+1, 2*nlay) :: Am
+    real(dp), dimension(nlay) :: rhs_dn, rhs_up
     real(dp), dimension(nlev) :: lw_up_g, lw_down_g
-
-    n = 2*nlay
 
     !! Delta-M scaling (PICASO convention, f = g**nstr)
     ff(:) = g_in(:)**nstr
@@ -167,42 +164,16 @@ contains
     tautop = dtau(1)*exp(-1.0_dp)
     Btop = (1.0_dp - exp(-tautop/ubari))*be(1)
 
-    !! Build the banded matrix, LAPACK storage A(i,j) = Am(kl+ku+1+i-j,j)
-    !! Unknowns per layer k: X(2k-1) (mode 1), X(2k) (mode 2)
-    Am(:,:) = 0.0_dp
-    i0 = kl + ku + 1
-
-    ! Top boundary: downward flux = incident isotropic flux
-    Am(i0+1-1,1) = Q1(1) ; Am(i0+1-2,2) = Q2(1)
-    rhs(1) = pi*Btop - zmn_down(1)
-
-    ! Layer interfaces: continuity of the downward and upward fluxes
+    !! Flux continuity right-hand sides at each interface (downward and upward rows)
     do k = 1, nlay-1
-      m = 2*k
-      ! downward flux
-      Am(i0+m-(m-1),m-1) = Q1(k)*exptrm(k)
-      Am(i0+m-m,m) = Q2(k)/exptrm(k)
-      Am(i0+m-(m+1),m+1) = -Q1(k+1)
-      Am(i0+m-(m+2),m+2) = -Q2(k+1)
-      rhs(m) = zmn_down(k+1) - zmn_up(k)
-      ! upward flux
-      Am(i0+(m+1)-(m-1),m-1) = Q2(k)*exptrm(k)
-      Am(i0+(m+1)-m,m) = Q1(k)/exptrm(k)
-      Am(i0+(m+1)-(m+1),m+1) = -Q2(k+1)
-      Am(i0+(m+1)-(m+2),m+2) = -Q1(k+1)
-      rhs(m+1) = zpl_down(k+1) - zpl_up(k)
+      rhs_dn(k) = zmn_down(k+1) - zmn_up(k)
+      rhs_up(k) = zpl_down(k+1) - zpl_up(k)
     end do
 
-    ! Bottom boundary: gas giant internal flux, I_up = I_down + B_int (unit return)
-    Am(i0+n-(n-1),n-1) = Q2(nlay)*exptrm(nlay) - Q1(nlay)*exptrm(nlay)
-    Am(i0+n-n,n) = Q1(nlay)/exptrm(nlay) - Q2(nlay)/exptrm(nlay)
-    rhs(n) = pi*be_int - zpl_up(nlay) + zmn_up(nlay)
-
-    call band_solve(n, Am, rhs, X)
-
-    !! Mode 2 coefficient rescaled to its value at the layer bottom (avoids overflow)
-    X1(:) = X(1:n:2)
-    X2(:) = X(2:n:2)/exptrm(:)
+    !! Block-tridiagonal solve: X1 = mode 1 at the layer top, X2 = mode 2 at the layer bottom
+    !! Top: downward flux = incident isotropic flux. Bottom: gas giant, I_up = I_down + B_int
+    call sh2_solve(nlay, Q1, Q2, exptrm, pi*Btop - zmn_down(1), rhs_dn, rhs_up, &
+      & (Q2(nlay) - Q1(nlay))*exptrm(nlay), Q1(nlay) - Q2(nlay), pi*be_int - zpl_up(nlay) + zmn_up(nlay), X1, X2)
 
     !! Particular solution first moment (constant in tau)
     Ip1(:) = (1.0_dp - w0(:))/(a0(:)*a1(:))*B1(:)
@@ -294,63 +265,65 @@ contains
 
   end function e_bet
 
-  !! Banded Gaussian elimination with partial pivoting (as LAPACK dgbsv)
-  !! A(i,j) = ab(kl+ku+1+i-j,j), the top kl rows of ab are fill-in workspace
-  !! (band widths kl, ku are module parameters, so the loop bounds are known at compile time)
-  subroutine band_solve(n, ab, b, x)
+  !! Two-stream SH system as a 2x2 block-tridiagonal Thomas solve (no pivoting).
+  !! Unknowns per layer: y1 = mode 1 amplitude at the layer top, y2 = mode 2 amplitude at the
+  !! layer bottom, so every coefficient is bounded (|Q| at most, e = exp(-lam dtau) <= 1).
+  !! Block row k pairs the downward-flux row of the interface above layer k (or the top
+  !! boundary) with the upward-flux row of the interface below it (or the bottom boundary).
+  !! The diagonal blocks then have |det| >= Q1^2 - Q2^2 = 8 pi^2 q > 0.
+  subroutine sh2_solve(nlay, Q1, Q2, e, rtop, rhs_dn, rhs_up, cb1, cb2, rbot, y1, y2)
     implicit none
 
-    integer, intent(in) :: n
-    real(dp), dimension(2*kl+ku+1, n), intent(inout) :: ab
-    real(dp), dimension(n), intent(inout) :: b
-    real(dp), dimension(n), intent(out) :: x
+    integer, intent(in) :: nlay
+    real(dp), dimension(nlay), intent(in) :: Q1, Q2, e
+    real(dp), dimension(nlay), intent(in) :: rhs_dn, rhs_up   ! interface k (1..nlay-1): down and up rows
+    real(dp), intent(in) :: rtop, cb1, cb2, rbot
+    real(dp), dimension(nlay), intent(out) :: y1, y2
 
-    integer :: i, j, k, p, d, jmax
-    real(dp) :: amax, fac, tmp
+    integer :: k
+    real(dp) :: d11, d12, d21, d22, rdet, v1, v2, r1, r2, t
+    real(dp), dimension(nlay) :: i11, i12, i21, i22, s1, s2
 
-    d = kl + ku + 1
-
-    do k = 1, n
-      jmax = min(n, k+kl+ku)
-
-      ! Partial pivoting within the band
-      p = k
-      amax = abs(ab(d,k))
-      do i = k+1, min(n, k+kl)
-        if (abs(ab(d+i-k,k)) > amax) then
-          amax = abs(ab(d+i-k,k))
-          p = i
-        end if
-      end do
-      if (p /= k) then
-        do j = k, jmax
-          tmp = ab(d+k-j,j)
-          ab(d+k-j,j) = ab(d+p-j,j)
-          ab(d+p-j,j) = tmp
-        end do
-        tmp = b(k) ; b(k) = b(p) ; b(p) = tmp
+    !! Forward elimination
+    do k = 1, nlay
+      ! row a: top boundary or downward flux continuity at the interface above
+      if (k == 1) then
+        d11 = Q1(1) ; d12 = Q2(1)*e(1)
+        r1 = rtop
+      else
+        d11 = -Q1(k) ; d12 = -Q2(k)*e(k)
+        r1 = rhs_dn(k-1)
+        ! eliminate Y(k-1): coefficients l = (Q1 e, Q2) of layer k-1, v = l D'^-1
+        v1 = Q1(k-1)*e(k-1)*i11(k-1) + Q2(k-1)*i21(k-1)
+        v2 = Q1(k-1)*e(k-1)*i12(k-1) + Q2(k-1)*i22(k-1)
+        ! U(k-1) = (0; -Q2(k), -Q1(k) e(k))
+        d11 = d11 + v2*Q2(k)
+        d12 = d12 + v2*Q1(k)*e(k)
+        r1 = r1 - v1*s1(k-1) - v2*s2(k-1)
       end if
-
-      ! Eliminate below the pivot
-      do i = k+1, min(n, k+kl)
-        fac = ab(d+i-k,k)/ab(d,k)
-        if (fac == 0.0_dp) cycle
-        do j = k+1, jmax
-          ab(d+i-j,j) = ab(d+i-j,j) - fac*ab(d+k-j,j)
-        end do
-        b(i) = b(i) - fac*b(k)
-      end do
+      ! row b: upward flux continuity at the interface below or bottom boundary
+      if (k == nlay) then
+        d21 = cb1 ; d22 = cb2
+        r2 = rbot
+      else
+        d21 = Q2(k)*e(k) ; d22 = Q1(k)
+        r2 = rhs_up(k)
+      end if
+      rdet = 1.0_dp/(d11*d22 - d12*d21)
+      i11(k) = d22*rdet ; i12(k) = -d12*rdet
+      i21(k) = -d21*rdet ; i22(k) = d11*rdet
+      s1(k) = r1 ; s2(k) = r2
     end do
 
-    ! Back substitution
-    do i = n, 1, -1
-      tmp = b(i)
-      do j = i+1, min(n, i+kl+ku)
-        tmp = tmp - ab(d+i-j,j)*x(j)
-      end do
-      x(i) = tmp/ab(d,i)
+    !! Back substitution, Y(k) = D'^-1 (r' - (0; u.Y(k+1))), u = (-Q2(k+1), -Q1(k+1) e(k+1))
+    y1(nlay) = i11(nlay)*s1(nlay) + i12(nlay)*s2(nlay)
+    y2(nlay) = i21(nlay)*s1(nlay) + i22(nlay)*s2(nlay)
+    do k = nlay-1, 1, -1
+      t = s2(k) + Q2(k+1)*y1(k+1) + Q1(k+1)*e(k+1)*y2(k+1)
+      y1(k) = i11(k)*s1(k) + i12(k)*t
+      y2(k) = i21(k)*s1(k) + i22(k)*t
     end do
 
-  end subroutine band_solve
+  end subroutine sh2_solve
 
 end module lw_SH2_mod

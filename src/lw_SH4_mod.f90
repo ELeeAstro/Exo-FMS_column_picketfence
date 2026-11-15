@@ -5,11 +5,12 @@
 !                - Nov 2026 : Optimisations - beam integrals from the stored transmissions (one
 !                             exponential per layer and angle), compile-time band widths in the
 !                             solver, reciprocals
+!                - Nov 2026 : 4x4 block-tridiagonal Thomas solve (replaces the banded matrix solve)
 !
 ! lw: Four-stream spherical harmonic method (SH4, Rooney et al. 2024), converted from PICASO,
 !     with source function technique fluxes
 !     Pros: Four-stream multiple scattering accuracy
-!     Cons: Banded matrix solve, slower than the two-stream methods
+!     Cons: Slower than the two-stream methods
 !!!
 
 module lw_SH4_mod
@@ -43,10 +44,7 @@ module lw_SH4_mod
   real(dp), dimension(nmu), parameter :: wuarr = 0.5_dp * w
   real(dp), dimension(nmu), parameter :: ruarr = 1.0_dp/uarr
 
-  !! Band widths of the four-stream matrix
-  integer, parameter :: kl = 5, ku = 5
-
-  private :: lw_SH_four_stream, band_solve, e_alp, e_bet
+  private :: lw_SH_four_stream, e_alp, e_bet, sh4_block, solve4
   public :: lw_SH4
 
 contains
@@ -109,25 +107,20 @@ contains
     real(dp), dimension(nlev), intent(out) :: flx_up, flx_down
 
     !! Work variables
-    integer :: k, m, n, r, c, row, col0, i0
+    integer :: k, m
     real(dp) :: tautop, Btop, u, ru, P2u, P3u
     real(dp), dimension(nlay) :: dtau, w0, ff, B0, B1
     real(dp), dimension(nlay) :: w_multi0, w_multi1, w_multi2, w_multi3, a0, a1, a2, a3
     real(dp), dimension(nlay) :: beta, gama, disc, lam1, lam2, e1, e2
     real(dp), dimension(nlay) :: R1, R2, Q1, Q2, S1, S2
     real(dp), dimension(nlay) :: p1pl, p2pl, q1pl, q2pl, p1mn, p2mn, q1mn, q2mn
-    real(dp), dimension(4,4,nlay) :: Ftop, Fbot
+    real(dp), dimension(4,4,nlay) :: Ftop
     real(dp), dimension(4,nlay) :: zdown, zup
-    real(dp), dimension(2) :: bsurf
     real(dp), dimension(nlay) :: X1, X2, X3, X4
     real(dp), dimension(nlay) :: ex, ev1, od1, ev2, od2, T_up, T_dn, Ip1, Nup, Ndn, Aup, Adn
     real(dp), dimension(nlay) :: ea1, eb1, ea2, eb2
     real(dp), dimension(nlay) :: src_up, src_dn, el1, el2, wa0
-    real(dp), dimension(4*nlay) :: rhs, X
-    real(dp), dimension(2*kl+ku+1, 4*nlay) :: Am
     real(dp), dimension(nlev) :: lw_up_g, lw_down_g
-
-    n = 4*nlay
 
     !! Delta-M scaling (PICASO convention, f = g**nstr)
     ff(:) = g_in(:)**nstr
@@ -194,10 +187,6 @@ contains
       Ftop(2,:,k) = (/q1mn(k), q1pl(k), q2mn(k), q2pl(k)/)
       Ftop(3,:,k) = (/p1pl(k), p1mn(k), p2pl(k), p2mn(k)/)
       Ftop(4,:,k) = (/q1pl(k), q1mn(k), q2pl(k), q2mn(k)/)
-      Fbot(:,1,k) = Ftop(:,1,k)*e1(k)
-      Fbot(:,2,k) = Ftop(:,2,k)/e1(k)
-      Fbot(:,3,k) = Ftop(:,3,k)*e2(k)
-      Fbot(:,4,k) = Ftop(:,4,k)/e2(k)
     end do
 
     !! Particular solution moments at layer top (down) and bottom (up), linear in tau Planck
@@ -214,52 +203,9 @@ contains
     tautop = dtau(1)*exp(-1.0_dp)
     Btop = (1.0_dp - exp(-tautop/ubari))*be(1)
 
-    !! Build the banded matrix, LAPACK storage A(i,j) = Am(kl+ku+1+i-j,j)
-    !! Unknowns per layer k: X(4k-3:4k)
-    Am(:,:) = 0.0_dp
-    i0 = kl + ku + 1
-
-    ! Top boundary: downward moments = those of the incident isotropic intensity
-    do r = 1, 2
-      do c = 1, 4
-        Am(i0+r-c,c) = Ftop(r,c,1)
-      end do
-    end do
-    rhs(1) = pi*Btop - zdown(1,1)
-    rhs(2) = -pi*Btop/4.0_dp - zdown(2,1)
-
-    ! Layer interfaces: continuity of all four moments
-    do k = 1, nlay-1
-      col0 = 4*(k-1)
-      do r = 1, 4
-        row = 2 + col0 + r
-        do c = 1, 4
-          Am(i0+row-(col0+c),col0+c) = Fbot(r,c,k)
-          Am(i0+row-(col0+4+c),col0+4+c) = -Ftop(r,c,k+1)
-        end do
-        rhs(row) = zdown(r,k+1) - zup(r,k)
-      end do
-    end do
-
-    ! Bottom boundary: gas giant internal flux, I_up = I_down + B_int (unit return)
-    bsurf(1) = pi*be_int
-    bsurf(2) = -pi*be_int/4.0_dp
-    col0 = n - 4
-    do r = 1, 2
-      row = n - 2 + r
-      do c = 1, 4
-        Am(i0+row-(col0+c),col0+c) = Fbot(2+r,c,nlay) - Fbot(r,c,nlay)
-      end do
-      rhs(row) = bsurf(r) - zup(2+r,nlay) + zup(r,nlay)
-    end do
-
-    call band_solve(n, Am, rhs, X)
-
-    !! Growing mode coefficients rescaled to their value at the layer bottom (avoids overflow)
-    X1(:) = X(1:n:4)
-    X2(:) = X(2:n:4)/e1(:)
-    X3(:) = X(3:n:4)
-    X4(:) = X(4:n:4)/e2(:)
+    !! Block-tridiagonal solve: X1, X3 = decaying mode amplitudes at the layer top,
+    !! X2, X4 = growing mode amplitudes at the layer bottom
+    call sh4_block(nlay, Ftop, e1, e2, zdown, zup, Btop, be_int, X1, X2, X3, X4)
 
     !! Particular solution first moment (constant in tau)
     Ip1(:) = (1.0_dp - w0(:))/(a0(:)*a1(:))*B1(:)
@@ -359,63 +305,104 @@ contains
 
   end function e_bet
 
-  !! Banded Gaussian elimination with partial pivoting (as LAPACK dgbsv)
-  !! A(i,j) = ab(kl+ku+1+i-j,j), the top kl rows of ab are fill-in workspace
-  !! (band widths kl, ku are module parameters, so the loop bounds are known at compile time)
-  subroutine band_solve(n, ab, b, x)
+  !! Four-stream SH system as a 4x4 block-tridiagonal Thomas solve.
+  !! Unknowns per layer y = (X1, X2, X3, X4): decaying modes at the layer top, growing modes at the
+  !! layer bottom (Stamnes & Conklin 1984 scaling), so all coefficients are bounded.
+  !! Block row k: rows 1:2 = downward moments at the interface above (or the top boundary),
+  !! rows 3:4 = upward moments at the interface below (or the bottom boundary).
+  subroutine sh4_block(nlay, Ftop, e1, e2, zdown, zup, Btop, be_int, X1, X2, X3, X4)
     implicit none
+    integer, intent(in) :: nlay
+    real(dp), dimension(4,4,nlay), intent(in) :: Ftop
+    real(dp), dimension(nlay), intent(in) :: e1, e2
+    real(dp), dimension(4,nlay), intent(in) :: zdown, zup
+    real(dp), intent(in) :: Btop, be_int
+    real(dp), dimension(nlay), intent(out) :: X1, X2, X3, X4
 
-    integer, intent(in) :: n
-    real(dp), dimension(2*kl+ku+1, n), intent(inout) :: ab
-    real(dp), dimension(n), intent(inout) :: b
-    real(dp), dimension(n), intent(out) :: x
+    integer :: k
+    real(dp), dimension(4,4) :: Gt, Gb, D
+    real(dp), dimension(4,3) :: Rh
+    real(dp), dimension(2,4) :: Lr
+    real(dp), dimension(2,4,nlay) :: Ur
+    real(dp), dimension(2,2) :: M
+    real(dp), dimension(4,nlay) :: wv, y
+    real(dp), dimension(4,2,nlay) :: Cm
+    real(dp), dimension(2) :: v
 
-    integer :: i, j, k, p, d, jmax
-    real(dp) :: amax, fac, tmp
-
-    d = kl + ku + 1
-
-    do k = 1, n
-      jmax = min(n, k+kl+ku)
-
-      ! Partial pivoting within the band
-      p = k
-      amax = abs(ab(d,k))
-      do i = k+1, min(n, k+kl)
-        if (abs(ab(d+i-k,k)) > amax) then
-          amax = abs(ab(d+i-k,k))
-          p = i
-        end if
-      end do
-      if (p /= k) then
-        do j = k, jmax
-          tmp = ab(d+k-j,j)
-          ab(d+k-j,j) = ab(d+p-j,j)
-          ab(d+p-j,j) = tmp
-        end do
-        tmp = b(k) ; b(k) = b(p) ; b(p) = tmp
+    do k = 1, nlay
+      ! moments of layer k at its top (Gt) and bottom (Gb) per unit rescaled amplitude
+      Gt(:,1) = Ftop(:,1,k) ; Gt(:,2) = Ftop(:,2,k)*e1(k) ; Gt(:,3) = Ftop(:,3,k) ; Gt(:,4) = Ftop(:,4,k)*e2(k)
+      ! rows 1:2
+      if (k == 1) then
+        D(1:2,:) = Gt(1:2,:)
+        Rh(1,1) = pi*Btop - zdown(1,1)
+        Rh(2,1) = -pi*Btop/4.0_dp - zdown(2,1)
+      else
+        D(1:2,:) = -Gt(1:2,:)
+        Rh(1:2,1) = zdown(1:2,k) - zup(1:2,k-1)
+        ! eliminate y(k-1): Lr = Gb(k-1)(1:2,:)
+        Lr(:,1) = Ftop(1:2,1,k-1)*e1(k-1) ; Lr(:,2) = Ftop(1:2,2,k-1)
+        Lr(:,3) = Ftop(1:2,3,k-1)*e2(k-1) ; Lr(:,4) = Ftop(1:2,4,k-1)
+        M(:,:) = matmul(Lr(:,:), Cm(:,:,k-1))
+        D(1:2,:) = D(1:2,:) - matmul(M(:,:), Ur(:,:,k-1))
+        Rh(1:2,1) = Rh(1:2,1) - matmul(Lr(:,:), wv(:,k-1))
       end if
-
-      ! Eliminate below the pivot
-      do i = k+1, min(n, k+kl)
-        fac = ab(d+i-k,k)/ab(d,k)
-        if (fac == 0.0_dp) cycle
-        do j = k+1, jmax
-          ab(d+i-j,j) = ab(d+i-j,j) - fac*ab(d+k-j,j)
-        end do
-        b(i) = b(i) - fac*b(k)
-      end do
+      ! rows 3:4
+      Gb(:,1) = Ftop(:,1,k)*e1(k) ; Gb(:,2) = Ftop(:,2,k) ; Gb(:,3) = Ftop(:,3,k)*e2(k) ; Gb(:,4) = Ftop(:,4,k)
+      if (k == nlay) then
+        D(3:4,:) = Gb(3:4,:) - Gb(1:2,:)
+        Rh(3,1) = pi*be_int - zup(3,k) + zup(1,k)
+        Rh(4,1) = -pi*be_int/4.0_dp - zup(4,k) + zup(2,k)
+      else
+        D(3:4,:) = Gb(3:4,:)
+        Rh(3:4,1) = zdown(3:4,k+1) - zup(3:4,k)
+        ! Ur = -Gt(k+1)(3:4,:)
+        Ur(:,1,k) = -Ftop(3:4,1,k+1) ; Ur(:,2,k) = -Ftop(3:4,2,k+1)*e1(k+1)
+        Ur(:,3,k) = -Ftop(3:4,3,k+1) ; Ur(:,4,k) = -Ftop(3:4,4,k+1)*e2(k+1)
+      end if
+      ! D [w C] = [r e3 e4]
+      Rh(:,2:3) = 0.0_dp ; Rh(3,2) = 1.0_dp ; Rh(4,3) = 1.0_dp
+      call solve4(D, Rh)
+      wv(:,k) = Rh(:,1)
+      Cm(:,:,k) = Rh(:,2:3)
     end do
 
-    ! Back substitution
-    do i = n, 1, -1
-      tmp = b(i)
-      do j = i+1, min(n, i+kl+ku)
-        tmp = tmp - ab(d+i-j,j)*x(j)
-      end do
-      x(i) = tmp/ab(d,i)
+    y(:,nlay) = wv(:,nlay)
+    do k = nlay-1, 1, -1
+      v(:) = matmul(Ur(:,:,k), y(:,k+1))
+      y(:,k) = wv(:,k) - matmul(Cm(:,:,k), v(:))
     end do
+    X1(:) = y(1,:) ; X2(:) = y(2,:) ; X3(:) = y(3,:) ; X4(:) = y(4,:)
 
-  end subroutine band_solve
+  end subroutine sh4_block
+
+  !! Solve A X = B in place (4x4, 3 right-hand sides), Gaussian elimination with partial pivoting
+  subroutine solve4(A, B)
+    implicit none
+    real(dp), dimension(4,4), intent(inout) :: A
+    real(dp), dimension(4,3), intent(inout) :: B
+    integer :: i, j, p
+    real(dp) :: fac
+    real(dp), dimension(4) :: tr
+    real(dp), dimension(3) :: tb
+    do j = 1, 3
+      p = j - 1 + maxloc(abs(A(j:4,j)), 1)
+      if (p /= j) then
+        tr(:) = A(j,:) ; A(j,:) = A(p,:) ; A(p,:) = tr(:)
+        tb(:) = B(j,:) ; B(j,:) = B(p,:) ; B(p,:) = tb(:)
+      end if
+      do i = j+1, 4
+        fac = A(i,j)/A(j,j)
+        A(i,j+1:4) = A(i,j+1:4) - fac*A(j,j+1:4)
+        B(i,:) = B(i,:) - fac*B(j,:)
+      end do
+    end do
+    do i = 4, 1, -1
+      do j = i+1, 4
+        B(i,:) = B(i,:) - A(i,j)*B(j,:)
+      end do
+      B(i,:) = B(i,:)/A(i,i)
+    end do
+  end subroutine solve4
 
 end module lw_SH4_mod

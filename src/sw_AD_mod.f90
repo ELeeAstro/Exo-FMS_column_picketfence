@@ -1,5 +1,7 @@
 !!!
 ! Elspeth KH Lee - Nov 2026 : Initial version, converted from AddingDoublingRT (JAX/C++)
+!                - Nov 2026 : Fine doubling start (tau0 ~ 2^-16) for any single scattering albedo - the coarser
+!                             start for w < 0.1 gave ~0.3% errors for weak scattering
 !
 ! sw: Adding-doubling method (8-stream), converted from AddingDoublingRT
 !     Pros: Accurate multiple scattering for any ssa and g, converges with stream number
@@ -317,16 +319,12 @@ contains
 
   end subroutine layer_doubling
 
-  !! Adaptive number of initial doublings: single-scattering error is O(tau0^2 w^2)
+  !! Number of initial doublings beyond log2(tau): the first-order start (T = I - tau0 G) needs
+  !! tau0/mu small for the absorption as well as the scattering, so the same fine start
+  !! (tau0 ~ 2^-16) is used for any single scattering albedo (pure absorption uses the exact branch)
   integer function ipow0(omega)
     real(dp), intent(in) :: omega
-    if (omega < 0.01_dp) then
-      ipow0 = 4
-    else if (omega < 0.1_dp) then
-      ipow0 = 10
-    else
-      ipow0 = 16
-    end if
+    ipow0 = 16
   end function ipow0
 
   !! Gauss-Legendre nodes and weights on [0,1]

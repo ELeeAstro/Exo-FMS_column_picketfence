@@ -7,7 +7,7 @@ Major Update History
  - May 2022 - SW zenith angle geometric correction added
  - Jun 2022 - Bezier short char added
  - Aug 2023 - VIM added, refactored arrays
- - Nov 2026 - Ported the updated semi-grey radiation and convection schemes, split sw and lw methods, added WENO4 interpolation and n-stream DISORT benchmarks, fixed the Toon internal flux lower boundary, added band flux outputs and speed/accuracy benchmarks
+ - Nov 2026 - Ported the updated semi-grey radiation and convection schemes, split sw and lw methods, added WENO4 interpolation and n-stream DISORT benchmarks, fixed the Toon internal flux lower boundary, added band flux outputs and speed/accuracy benchmarks, SDA longwave method, block-tridiagonal solves for SH2/SH4
 
 Elspeth K.H. Lee - Nov 2026
 
@@ -47,20 +47,71 @@ For nvfortran or Intel, also change DISORT_FLAGS as described in the makefile.
 
 # Personal recommendations
 
+These recommendations come from the speed/accuracy benchmarks of this picket fence model below.
+
 For the longwave: \
-'lw_DDA' - the recommended choice when scattering is present. \
-'lw_Toon89' - the default in the supplied namelist. A familiar, fast scattering method. \
-'lw_sc_scat_ric' - for accurate heating rates with sufficient vertical resolution.  (NOT PUBLISHED YET). \
-'lw_AD' - for reference accuracy. \
-'lw_AA_L' - a good simple choice if there is no longwave scattering.
-'lw_TAS' - for weak scattering after checking the required accuracy.
+'lw_DDA' - the default choice. Toon89 cost with OLR errors < 0.3% for any single scattering albedo, less accurate heating rates in the clear upper atmosphere (~7 K/day). \
+'lw_SH4' - for the most accurate heating rates at low to moderate scattering, OLR errors < 0.6%, at ~2x the cost of DDA. \
+'lw_SDA' - the fastest four-stream method, OLR errors < 1.3%, errors decrease as the scattering gets stronger. \
+'lw_SH2' - a cheap option for weak to moderate scattering, more accurate than Toon89 at the same cost, but poor heating rates when strongly scattering (~25 K/day). \
+'lw_Toon89' - the default in the supplied namelist. The well tested Toon89 two-stream method, exact without scattering, but OLR errors grow with single scattering albedo (up to ~6.5%). \
+'lw_sc_scat_ric' - for accurate heating rates. Becomes inaccurate for optically thick, near-conservative scattering (OLR errors up to ~20% at ssa = 0.99) unless the vertical resolution is increased (NOT PUBLISHED YET). \
+'lw_AD' - for reference accuracy (OLR errors ~0.1%), slow method (~30x DDA). \
+'lw_AA_L' - if there is no longwave scattering. Exact for pure absorption, but very inaccurate once strong scattering is present. \
+'lw_TAS' - a fast method for weak scattering (ssa < ~0.25).
 
 For the shortwave: \
-'sw_adding' - the default and recommended fast multiple scattering choice. \
-'sw_Toon89' - the well tested Toon89 two-stream method.. \
-'sw_Liou88' - for four-stream accuracy. \
-'sw_AD' - for reference accuracy.  \
-'sw_direct' - if there is no shortwave scattering. 
+'sw_adding' - the default choice. The fastest multiple scattering method, works well for clouds and hazes as well as uniform atmospheres (ASR errors < 1.5%). \
+'sw_Toon89' - the well tested Toon89 two-stream method (ASR errors < 3%). \
+'sw_Liou88' - for four-stream accuracy. The most accurate method apart from sw_AD (ASR errors < 0.3%), at ~2x the cost of Toon89. \
+'sw_SDA' - the fastest four-stream method (ASR errors < 0.6%), gives the same answer as sw_SH4 at ~1/2 of the cost. \
+'sw_SH2'/'sw_SH4' - the PICASO spherical harmonic methods, useful for cross-checks (same answers as sw_adding and sw_SDA). \
+'sw_AD' - for reference accuracy, but slow (~90x sw_adding). \
+'sw_direct' - if there is no shortwave scattering.
+
+# Benchmarks
+
+All schemes were run through this model for one radiation call on the initial (iIC = 4) profile of the supplied namelist (Freedman opacities, 54 layers), against 32-stream DISORT.
+The single scattering albedo and asymmetry factor are the same in every layer and band, ssa = 0 - 0.99 and g = 0 - 0.9 (40 cases), mu_z = 0.577.
+The OLR (ASR for the shortwave, as a % of the incident flux) error is the key measure, heating rate (HR) errors are the maximum and mean RMS over the dynamically important region, 1 mbar - 10 bar.
+The time is per call, for all bands (two IR or three visible), measured from the model time-stepping loop.
+
+Longwave (32-stream DISORT ~8000 us/call):
+
+| Scheme | us/call | Mean / max OLR error (%) | Max / RMS HR error, 1 mbar - 10 bar (K/day) |
+|---|---|---|---|
+| lw_DFE (ssa = 0 only) | 4.4 | 0.16 / 0.16 | 1.8 / 0.77 |
+| lw_AA_E | 5.1 | 56 / 399 | 127 / 21.0 |
+| lw_AA_L | 5.8 | 57 / 400 | 126 / 20.9 |
+| lw_sc_linear | 5.8 | 57 / 400 | 126 / 20.9 |
+| lw_TAS | 5.8 | 8.0 / 41 | 58 / 8.6 |
+| lw_Fu97 | 6.3 | 1.40 / 5.42 | 22 / 4.7 |
+| lw_SDA | 7.4 | 0.72 / 1.21 | 7.7 / 1.45 |
+| lw_Toon89 | 8.0 | 2.17 / 6.55 | 24 / 3.0 |
+| lw_DDA | 8.3 | 0.18 / 0.25 | 7.0 / 1.44 |
+| lw_SH2 | 8.5 | 0.36 / 1.54 | 25 / 5.0 |
+| lw_VIM_L | 11.2 | 25 / 170 | 353 / 21.5 |
+| lw_VIM_E | 11.9 | 25 / 171 | 340 / 21.6 |
+| lw_disort_ts | 16.2 | 12 / 22 | 38 / 9.4 |
+| lw_SH4 | 17.4 | 0.15 / 0.54 | 7.5 / 1.44 |
+| lw_sc_scat_ric | 19.4 | 2.96 / 19.5 | 9.6 / 1.05 |
+| lw_AD | 268 | 0.02 / 0.13 | 1.3 / 0.24 |
+
+Shortwave (32-stream DISORT ~4500 us/call):
+
+| Scheme | us/call | Mean / max ASR error (%) | Max / RMS HR error, 1 mbar - 10 bar (K/day) |
+|---|---|---|---|
+| sw_direct | 0.4 | 23 / 80 | 32 / 8.3 |
+| sw_adding | 3.4 | 0.61 / 1.46 | 0.9 / 0.20 |
+| sw_SH2 | 5.1 | 0.61 / 1.46 | 0.9 / 0.20 |
+| sw_Toon89 | 5.4 | 1.47 / 2.92 | 1.1 / 0.25 |
+| sw_SDA | 9.3 | 0.26 / 0.60 | 0.4 / 0.07 |
+| sw_Liou88 | 11.7 | 0.06 / 0.30 | 0.2 / 0.02 |
+| sw_disort_ts | 17.0 | 1.47 / 2.92 | 1.1 / 0.25 |
+| sw_SH4 | 18.6 | 0.26 / 0.60 | 0.4 / 0.07 |
+| sw_AD | 306 | 0.005 / 0.04 | 0.05 / 0.01 |
+
+lw_Toon89, lw_SH2, lw_SH4 and lw_sc_scat_ric become inaccurate for extremely optically thick (tau > ~1e6), strongly scattering layers, lw_AD and lw_DDA remain accurate there.
 
 # Methods
 
@@ -70,7 +121,7 @@ For the shortwave method we have:
 2. Adding method with delta-Eddington layers (Meador & Weaver 1980)
 3. Spherical harmonic doubling adding method (SDA, Zhang & Li 2013)
 4. Toon89 multiple scattering method
-5. Two- and four-stream spherical harmonics (SH2 and SH4), converted from PICASO
+5. Two- and four-stream spherical harmonics (SH2 and SH4), converted from PICASO, solved as block-tridiagonal systems
 6. Adding-doubling (AD) 8-stream multiple scattering, converted from AddingDoublingRT
 7. Delta-four-stream discrete ordinates with adding (Liou88, Liou et al. 1988)
 8. Two-stream DISORT version
@@ -85,15 +136,16 @@ For the longwave method we have:
 3. Short characteristics (sc) with linear interpolants and the extended absorption approximation (EAA) for scattering
 4. Short characteristics 8-stream discrete ordinates with anisotropic multiple scattering, solved by Riccati invariant imbedding (sc_scat_ric)
 5. Toon89 multiple scattering method
-6. Two- and four-stream spherical harmonics (SH2 and SH4), converted from PICASO
+6. Two- and four-stream spherical harmonics (SH2 and SH4), converted from PICASO, solved as block-tridiagonal systems
 7. Variational iteration method (VIM), exponential and linear in tau (VIM_E and VIM_L)
 8. Adding-doubling (AD) 8-stream multiple scattering, converted from AddingDoublingRT
-9. Four-stream discrete ordinates adding method (DDA, Zhang et al. 2013)
+9. Four-stream discrete ordinates adding method (DDA, Zhang et al. 2013, 2016)
 10. Delta-two- and four-stream combination method (Fu97, Fu et al. 1997)
 11. Chou et al. (1999) scaling with the Tang et al. (2018) adjustment (TAS)
 12. Two-stream DISORT version
 13. n-stream DISORT version (benchmark)
 14. Absorption-only discontinuous finite-element method (DFE)
+15. Four-stream spherical harmonic adding method (SDA, Wu et al. 2016), fluxes from the first moment (no source function technique)
 
 The direct and iterative short characteristics scattering solvers and the Feautrier method are in development and are disabled. DFE is experimental and does not include scattering.
 
@@ -149,6 +201,7 @@ lw_scheme: \
 'lw_Toon89' - Toon89 method (Exo-FMS_2 version) \
 'lw_SH2' - two-stream spherical harmonic method (PICASO) \
 'lw_SH4' - four-stream spherical harmonic method (PICASO) \
+'lw_SDA' - four-stream spherical harmonic adding method (Wu et al. 2016) \
 'lw_VIM_E' - VIM method, exponential in tau \
 'lw_VIM_L' - VIM method, linear in tau \
 'lw_AD' - adding-doubling method \
@@ -174,7 +227,7 @@ The option 'none' turns off a radiation or convection scheme (e.g. to run withou
 
 nlay, a_sh , b_sh - the number of layers, and filenames that contain the a and b constants for the hybrid sigma grid (at least three layers for WENO interpolation)
 
-pref - reference surface pressure (pa)
+pref - reference surface pressure (Pa)
 
 t_step - time step in seconds \
 nstep - number of integer timesteps \
@@ -233,11 +286,12 @@ FMS_RC_band_flx.out - level index, pressure, SW up (3), SW down (3), SW net (3),
 The fluxes and tendencies describe the final radiation step, before its temperature update, as in the semi-grey driver.
 Output files are replaced on each run.
 
-# Gaussian Ordinance values
+# Gaussian ordinate values
 
 In methods that use Gaussian quadrature to perform the mu integration in intensity (to calculate the flux), various values and weights can be changed for testing at the top of the modules.
 Most longwave methods use the 4 node Gauss-Jacobi quadrature from Hogan (2024).
-The schemes where the quadrature points are also the scattering streams (sc_scat_ric, AD) use Gauss-Legendre points.
+The schemes where the quadrature points are also the scattering streams (sc_scat_ric, AD, DDA) use double-Gauss points (Gauss-Legendre on each hemisphere), Fu97 also uses double-Gauss points for its four-stream intensity integration.
+SDA takes the fluxes directly from the first moment of the intensity, so does not use a quadrature.
 You will need to clean and recompile the code if these are changed. Beware, some codes use the classical Gauss-Legendre method (flux = 2pi * intensity), while others include the weighting in the intensity (flux = pi * intensity).
 
 # Future developments

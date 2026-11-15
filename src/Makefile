@@ -64,6 +64,7 @@ OBJECTS = \
 		lw_Toon89_mod.o \
 		lw_SH2_mod.o \
 		lw_SH4_mod.o \
+		lw_SDA_mod.o \
 		lw_disort_ts_mod.o \
 		lw_disort_mod.o \
 		lw_AD_mod.o \

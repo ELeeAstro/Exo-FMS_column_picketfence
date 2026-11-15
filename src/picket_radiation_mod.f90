@@ -26,6 +26,7 @@ module picket_radiation_mod
   use lw_Toon89_mod, only : lw_Toon89
   use lw_SH2_mod, only : lw_SH2
   use lw_SH4_mod, only : lw_SH4
+  use lw_SDA_mod, only : lw_SDA
   use lw_disort_ts_mod, only : lw_disort_ts
   use lw_disort_mod, only : lw_disort
   use lw_AD_mod, only : lw_AD
@@ -136,6 +137,9 @@ contains
     case('lw_SH4')
       ! Four-stream spherical harmonic method (PICASO) with multiple scattering
       call lw_SH4(nlay, nlev, Tl, pl, pe, tau_IRe, lw_a, lw_g, Tint, lw_up, lw_down, lw_net, olr)
+    case('lw_SDA')
+      ! Four-stream spherical harmonic adding method (4SDA) with multiple scattering
+      call lw_SDA(nlay, nlev, Tl, pl, pe, tau_IRe, lw_a, lw_g, Tint, lw_up, lw_down, lw_net, olr)
     case('lw_disort_ts')
       ! Two stream disort method with multiple scattering
       call lw_disort_ts(nlay, nlev, Tl, pl, pe, tau_IRe, lw_a, lw_g, Tint, lw_up, lw_down, lw_net, olr)
